@@ -1550,7 +1550,8 @@ function exportCSV(){
 const SHEET_ID = '1EiCOt1t1IxllhW9F9yrRQR4ZvtouNusx3Yu3Oky6_Gs';
 const SHEET_NAME = 'Sheet1';
 // Public CSV export URL — sheet must be shared as "Anyone with link can view"
-const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/1EiCOt1t1IxllhW9F9yrRQR4ZvtouNusx3Yu3Oky6_Gs/export?format=csv&gid=0`;
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKGSv13e8ZPm34HhndmdBaesdiEfI9r42EOxnzcGTeQ24Wek3BhW4VVBZKyztTmf2NcItUlnz5VTme/pub?gid=1546947405&single=true&output=csv';
+const SHEET_EXPORT_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKGSv13e8ZPm34HhndmdBaesdiEfI9r42EOxnzcGTeQ24Wek3BhW4VVBZKyztTmf2NcItUlnz5VTme/pub?gid=1546947405&single=true&output=csv';
 // Apps Script Web App URL for writes — set after deploying Apps Script
 let APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz1ENdGDiICNij5_Tmi5cXqsPOQyj1-e10QO0KOmJ3sJO0tcGt45CPqR2npvX-EoRSXnQ/exec';
 
@@ -1624,8 +1625,12 @@ function rowToSku(row, idx) {
 async function syncFromSheet() {
   setSyncStatus('syncing');
   try {
-    const res = await fetch(SHEET_CSV_URL + '&t=' + Date.now());
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    // Try gviz URL first, fall back to export URL
+    let res = await fetch(SHEET_CSV_URL + '&t=' + Date.now()).catch(()=>null);
+    if (!res || !res.ok) {
+      res = await fetch(SHEET_EXPORT_URL + '&t=' + Date.now()).catch(()=>null);
+    }
+    if (!res || !res.ok) throw new Error('HTTP ' + (res ? res.status : 'network error'));
     const csv = await res.text();
     const rows = parseSheetCSV(csv);
     if (!rows.length) throw new Error('No rows parsed');
