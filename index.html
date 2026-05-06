@@ -1,0 +1,1732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FBA Prep Sequencer</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#222535;--border:#2e3248;
+  --accent:#f0c040;--accent2:#4ade9a;--danger:#f06060;
+  --text:#e8e9f0;--muted:#6b7094;--label:#9499bb;
+  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;}
+body::before{content:'';position:fixed;inset:0;
+  background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);
+  background-size:40px 40px;opacity:.25;pointer-events:none;z-index:0;}
+.app{position:relative;z-index:1;max-width:1400px;margin:0 auto;padding:32px 28px 60px;}
+.header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:36px;gap:16px;flex-wrap:wrap;}
+.eyebrow{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.15em;text-transform:uppercase;margin-bottom:6px;}
+h1{font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.1;}
+h1 span{color:var(--accent);}
+.subtitle{color:var(--muted);font-size:13px;margin-top:6px;font-family:var(--mono);}
+.header-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;}
+.tabs{display:flex;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:3px;width:fit-content;margin-bottom:28px;flex-wrap:wrap;}
+.tab{font-family:var(--mono);font-size:12px;padding:7px 16px;border-radius:5px;border:none;background:transparent;color:var(--muted);cursor:pointer;letter-spacing:.05em;transition:all .15s;}
+.tab.active{background:var(--accent);color:#0f1117;font-weight:600;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;margin-bottom:16px;}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap;}
+.card-title{font-family:var(--mono);font-size:12px;color:var(--label);letter-spacing:.1em;text-transform:uppercase;}
+.sku-table{width:100%;border-collapse:collapse;table-layout:fixed;}
+.sku-table th{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;text-align:left;padding:6px 10px 10px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;}
+.sku-table td{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:middle;overflow:hidden;}
+.sku-table tr:last-child td{border-bottom:none;}
+.sku-table tr.sku-row:hover td{background:var(--surface2);}
+input[type="text"],input[type="number"]{background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:13px;border-radius:5px;padding:6px 10px;width:100%;outline:none;transition:border .15s;}
+input:focus{border-color:var(--accent);}
+input::placeholder{color:var(--muted);}
+input[type="file"]{display:none;}
+select{background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;border-radius:5px;padding:6px 8px;width:100%;outline:none;}
+.btn{font-family:var(--mono);font-size:12px;letter-spacing:.06em;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.btn-primary{background:var(--accent);color:#0f1117;font-weight:600;}
+.btn-primary:hover{background:#f5d060;}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border);}
+.btn-ghost:hover{border-color:var(--label);color:var(--text);}
+.btn-import{background:rgba(74,222,154,.12);color:var(--accent2);border:1px solid rgba(74,222,154,.25);}
+.btn-import:hover{background:rgba(74,222,154,.2);}
+.btn-shipment{background:rgba(240,192,64,.12);color:var(--accent);border:1px solid rgba(240,192,64,.25);}
+.btn-shipment:hover{background:rgba(240,192,64,.2);}
+.btn-danger{background:transparent;color:var(--danger);border:1px solid transparent;font-size:14px;padding:4px 8px;}
+.btn-danger:hover{border-color:var(--danger);}
+.add-row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:flex-end;}
+.field{display:flex;flex-direction:column;gap:5px;}
+.field label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
+.field input,.field select{min-width:80px;}
+.field.name-field input{min-width:140px;}
+.field.sku-field input{min-width:120px;}
+.import-zone{border:1px dashed var(--border);border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:all .15s;}
+.import-zone:hover,.import-zone.drag-over{border-color:var(--accent2);background:rgba(74,222,154,.05);}
+.import-zone p{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:12px;}
+.import-zone code{font-family:var(--mono);font-size:10px;color:var(--label);background:var(--bg);padding:4px 10px;border-radius:4px;display:inline-block;margin-top:10px;}
+.folder-panel{border-radius:10px;padding:20px 24px;margin-bottom:16px;border:1px solid var(--border);}
+.folder-panel.disconnected{background:var(--surface);}
+.folder-panel.connected{background:rgba(74,222,154,.06);border-color:rgba(74,222,154,.25);}
+.folder-status{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.status-dot.on{background:var(--accent2);box-shadow:0 0 6px rgba(74,222,154,.5);}
+.status-dot.off{background:var(--muted);}
+.status-text{font-family:var(--mono);font-size:12px;flex:1;}
+.last-loaded{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+.last-loaded strong{color:var(--accent);}
+.manual-fallback{border:1px dashed var(--border);border-radius:8px;padding:16px;text-align:center;margin-top:12px;}
+.manual-fallback p{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:10px;}
+.feedback{font-family:var(--mono);font-size:12px;padding:10px 14px;border-radius:6px;margin-bottom:16px;display:none;}
+.feedback.success{background:rgba(74,222,154,.1);color:var(--accent2);border:1px solid rgba(74,222,154,.2);}
+.feedback.error{background:rgba(240,96,96,.1);color:var(--danger);border:1px solid rgba(240,96,96,.2);}
+.feedback.warn{background:rgba(240,192,64,.1);color:var(--accent);border:1px solid rgba(240,192,64,.2);}
+.warn-table{width:100%;border-collapse:collapse;margin-top:12px;}
+.warn-table th{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;text-align:left;padding:0 8px 8px;border-bottom:1px solid var(--border);}
+.warn-table td{font-family:var(--mono);font-size:12px;padding:8px;border-bottom:1px solid var(--border);}
+.warn-table tr:last-child td{border-bottom:none;}
+.week-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+@media(max-width:600px){.week-grid{grid-template-columns:1fr;}}
+.qty-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:7px;gap:12px;}
+.qty-row.auto-filled{border-color:rgba(240,192,64,.35);background:rgba(240,192,64,.04);}
+.qty-sku{font-size:13px;font-weight:500;flex:1;}
+.qty-amz{font-family:var(--mono);font-size:10px;color:var(--muted);}
+.qty-meta{font-family:var(--mono);font-size:11px;color:var(--muted);}
+.auto-badge{font-family:var(--mono);font-size:9px;color:var(--accent);background:rgba(240,192,64,.15);border:1px solid rgba(240,192,64,.3);border-radius:3px;padding:1px 5px;margin-left:6px;vertical-align:middle;}
+.sequence-list{display:flex;flex-direction:column;gap:10px;}
+.seq-item{display:flex;align-items:stretch;gap:0;border-radius:8px;overflow:hidden;border:1px solid var(--border);}
+.seq-num{font-family:var(--mono);font-size:18px;font-weight:600;color:#0f1117;background:var(--accent);width:52px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.seq-num.mid{background:var(--accent2);}
+.seq-num.top{background:var(--label);color:var(--text);}
+.seq-body{background:var(--surface2);flex:1;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.seq-name{font-size:15px;font-weight:500;}
+.seq-detail{display:flex;gap:20px;flex-wrap:wrap;}
+.seq-stat{display:flex;flex-direction:column;gap:2px;}
+.seq-stat-val{font-family:var(--mono);font-size:13px;font-weight:500;}
+.seq-stat-lbl{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+.seq-prep{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:4px;}
+.seq-prep.no-prep{background:rgba(148,153,187,.12);color:var(--label);border:1px solid rgba(148,153,187,.25);}
+.seq-prep.label{background:rgba(74,222,154,.12);color:var(--accent2);border:1px solid rgba(74,222,154,.2);}
+.seq-prep.boxed{background:rgba(96,165,250,.12);color:#60a5fa;border:1px solid rgba(96,165,250,.2);}
+.seq-prep.multipack{background:rgba(240,192,64,.12);color:var(--accent);border:1px solid rgba(240,192,64,.2);}
+.seq-prep.other{background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid rgba(167,139,250,.2);}
+.pallet-block{margin-bottom:24px;}
+.pallet-header{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
+.pallet-badge{font-family:var(--mono);font-size:11px;font-weight:600;padding:4px 12px;border-radius:4px;}
+.pallet-subtitle{font-family:var(--mono);font-size:11px;color:var(--muted);}
+.pallet-bars{display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
+.pbar{flex:1;min-width:140px;}
+.pbar-label{font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:4px;}
+.pbar-track{background:var(--bg);border-radius:4px;height:6px;overflow:hidden;border:1px solid var(--border);}
+.pbar-fill{height:100%;border-radius:4px;}
+.pbar-val{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;}
+.pallet-layers{display:flex;flex-direction:column-reverse;gap:3px;}
+.layer{border-radius:5px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border:1px solid transparent;}
+.layer.bottom{background:rgba(240,192,64,.15);border-color:rgba(240,192,64,.3);}
+.layer.middle{background:rgba(74,222,154,.1);border-color:rgba(74,222,154,.2);}
+.layer.top-layer{background:rgba(107,112,148,.15);border-color:rgba(107,112,148,.3);}
+.layer-label{font-family:var(--mono);font-size:12px;font-weight:500;}
+.layer-detail{font-size:12px;color:var(--muted);margin-top:2px;}
+.layer-ht{font-family:var(--mono);font-size:11px;color:var(--muted);flex-shrink:0;}
+.pallet-cap{text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px;border:1px dashed var(--border);border-radius:5px;margin-top:4px;}
+.summary{display:flex;gap:24px;flex-wrap:wrap;padding:16px 20px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:20px;}
+.sum-stat{display:flex;flex-direction:column;gap:3px;}
+.sum-val{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--accent);}
+.sum-lbl{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+.empty-state{text-align:center;padding:48px 20px;color:var(--muted);font-family:var(--mono);font-size:13px;}
+.zone-legend{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;}
+.zone-dot{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:middle;}
+.zone-item{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;align-items:center;}
+.divider{border:none;border-top:1px solid var(--border);margin:20px 0;}
+.section-label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px;}
+
+/* ── Pallet Build tab ── */
+.pallet-select-row{display:flex;gap:8px;align-items:center;margin-bottom:20px;flex-wrap:wrap;}
+.pallet-select-row label{font-family:var(--mono);font-size:11px;color:var(--muted);}
+.pallet-select-row select{width:auto;min-width:140px;}
+.view-toggle{display:flex;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px;}
+.view-btn{font-family:var(--mono);font-size:11px;padding:5px 14px;border-radius:4px;border:none;background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;}
+.view-btn.active{background:var(--accent);color:#0f1117;font-weight:600;}
+
+/* 3D viewer */
+#three-container{width:100%;height:480px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:#0a0d14;position:relative;}
+.three-hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:10px;color:rgba(148,153,187,.6);pointer-events:none;white-space:nowrap;}
+.three-legend{position:absolute;top:12px;right:12px;background:rgba(15,17,23,.85);border:1px solid var(--border);border-radius:7px;padding:10px 14px;display:flex;flex-direction:column;gap:6px;}
+.legend-item{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;color:var(--muted);}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
+
+/* 2D layer viewer */
+.layer-nav{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
+.layer-nav-btn{font-family:var(--mono);font-size:13px;padding:6px 14px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;}
+.layer-nav-btn:hover{border-color:var(--accent);color:var(--accent);}
+.layer-nav-btn:disabled{opacity:.3;cursor:default;}
+.layer-counter{font-family:var(--mono);font-size:12px;color:var(--text);}
+.layer-stats{display:flex;gap:20px;flex-wrap:wrap;padding:12px 16px;background:var(--surface2);border-radius:7px;margin-bottom:14px;}
+.lstat{display:flex;flex-direction:column;gap:2px;}
+.lstat-val{font-family:var(--mono);font-size:14px;font-weight:600;}
+.lstat-lbl{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+#layer-canvas-wrap{position:relative;width:100%;overflow:hidden;}
+#layer-canvas{display:block;max-width:100%;border-radius:8px;border:1px solid var(--border);}
+.box-legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;}
+.box-legend-item{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--muted);}
+.box-legend-swatch{width:14px;height:14px;border-radius:3px;border:1px solid rgba(255,255,255,.15);}
+
+/* ── Timer styles ── */
+.timer-panel{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:12px;}
+.timer-display{font-family:var(--mono);font-size:36px;font-weight:600;color:var(--accent);text-align:center;letter-spacing:.05em;margin:10px 0;}
+.timer-display.running{color:var(--accent2);}
+.timer-display.paused{color:var(--label);}
+.timer-btns{display:flex;gap:8px;justify-content:center;margin-bottom:12px;}
+.timer-runs{margin-top:10px;max-height:160px;overflow-y:auto;}
+.timer-run-row{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:5px;font-family:var(--mono);font-size:12px;}
+.timer-run-row:nth-child(odd){background:var(--surface2);}
+.timer-avg{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent2);text-align:center;padding:8px;border-top:1px solid var(--border);margin-top:8px;}
+.timing-badge{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;display:inline-block;}
+.timing-badge.timed{background:rgba(74,222,154,.15);color:var(--accent2);border:1px solid rgba(74,222,154,.3);}
+.timing-badge.manual{background:rgba(240,192,64,.12);color:var(--accent);border:1px solid rgba(240,192,64,.25);}
+.timing-badge.none{background:rgba(240,96,96,.12);color:var(--danger);border:1px solid rgba(240,96,96,.25);}
+/* Shift estimator */
+.shift-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;margin-bottom:16px;}
+.shift-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);gap:12px;flex-wrap:wrap;}
+.shift-row:last-child{border-bottom:none;}
+.shift-label{font-family:var(--mono);font-size:12px;color:var(--muted);}
+.shift-val{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--text);}
+.shift-total{background:var(--surface2);border-radius:8px;padding:14px 18px;margin-top:12px;display:flex;align-items:center;justify-content:space-between;}
+.shift-total-label{font-family:var(--mono);font-size:12px;color:var(--muted);}
+.shift-total-val{font-family:var(--mono);font-size:22px;font-weight:600;color:var(--accent);}
+.untimed-warn{font-family:var(--mono);font-size:11px;color:var(--danger);padding:8px 12px;background:rgba(240,96,96,.08);border:1px solid rgba(240,96,96,.2);border-radius:6px;margin-top:10px;}
+.settings-row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px;}
+.settings-field{display:flex;flex-direction:column;gap:5px;}
+.settings-field label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
+.settings-field input{background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:14px;border-radius:5px;padding:6px 10px;width:90px;outline:none;}
+.settings-field input:focus{border-color:var(--accent);}
+
+/* Inline editable cells */
+.editable{cursor:pointer;border-radius:4px;padding:2px 4px;transition:background .15s;}
+.editable:hover{background:var(--surface2);}
+.inline-input{background:var(--bg);border:1px solid var(--accent);color:var(--text);font-family:var(--mono);font-size:12px;border-radius:4px;padding:3px 6px;outline:none;width:100%;}
+.inline-select{background:var(--bg);border:1px solid var(--accent);color:var(--text);font-family:var(--mono);font-size:12px;border-radius:4px;padding:3px 6px;outline:none;}
+.prep-badge{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;}
+.prep-badge.no-prep{background:rgba(148,153,187,.12);color:var(--label);border:1px solid rgba(148,153,187,.25);}
+.prep-badge.label{background:rgba(74,222,154,.12);color:var(--accent2);border:1px solid rgba(74,222,154,.2);}
+.prep-badge.boxed{background:rgba(96,165,250,.12);color:#60a5fa;border:1px solid rgba(96,165,250,.2);}
+.prep-badge.multipack{background:rgba(240,192,64,.12);color:var(--accent);border:1px solid rgba(240,192,64,.2);}
+.prep-badge.other{background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid rgba(167,139,250,.2);}
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="header">
+  <div class="header-left">
+    <div class="eyebrow">Amazon FBA</div>
+    <h1>Prep <span>Sequencer</span></h1>
+    <div class="subtitle">// 48×40 pallet · 72" max · 1,500 lb max</div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-ghost" onclick="exportCSV()">⬇ Export CSV</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('skus')">SKU Library</button>
+  <button class="tab" onclick="switchTab('week')">This Week</button>
+  <button class="tab" onclick="switchTab('sequence')">Prep Order</button>
+  <button class="tab" onclick="switchTab('palletbuild')">Pallet Build</button>
+</div>
+
+<!-- SKU LIBRARY -->
+<div id="tab-skus">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Import SKUs from CSV</span>
+      <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px" onclick="downloadTemplate()">⬇ Download template</button>
+    </div>
+    <div id="import-feedback" class="feedback"></div>
+    <div class="import-zone" id="drop-zone"
+      onclick="document.getElementById('csv-file-input').click()"
+      ondragover="event.preventDefault();this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="handleCSVDrop(event)">
+      <p>Drop your SKU CSV here, or click to browse</p>
+      <button class="btn btn-import" onclick="event.stopPropagation();document.getElementById('csv-file-input').click()">⬆ Choose CSV file</button><br>
+      <code>amazon_sku, name, length, width, height, weight_lb, units_per_case, prep_type, mins_per_case</code>
+    </div>
+    <input type="file" id="csv-file-input" accept=".csv" onchange="handleCSVInput(this)">
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">SKU master list</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--muted)" id="sku-count">0 SKUs</span>
+    </div>
+    <table class="sku-table">
+      <colgroup>
+        <col style="width:130px">
+        <col style="width:240px">
+        <col style="width:70px">
+        <col style="width:70px">
+        <col style="width:70px">
+        <col style="width:90px">
+        <col style="width:80px">
+        <col style="width:110px">
+        <col style="width:130px">
+        <col style="width:140px">
+      </colgroup>
+      <thead><tr>
+        <th>Amazon SKU</th>
+        <th>Display Name</th>
+        <th title="Length — click to edit">L (in) ✎</th>
+        <th title="Width — click to edit">W (in) ✎</th>
+        <th title="Height — click to edit">H (in) ✎</th>
+        <th title="Case weight — click to edit">Wt (lb) ✎</th>
+        <th title="Units per case — click to edit">Units ✎</th>
+        <th title="Minutes per case — click to edit">Mins/Case ✎</th>
+        <th title="Click badge to change">Prep Type ✎</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="sku-tbody"><tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No SKUs yet</td></tr></tbody>
+    </table>
+    <hr class="divider">
+    <div class="section-label">Add manually</div>
+    <div class="add-row">
+      <div class="field sku-field"><label>Amazon SKU</label><input type="text" id="new-amzsku" placeholder="e.g. 1054983958"></div>
+      <div class="field name-field"><label>Display Name</label><input type="text" id="new-name" placeholder="e.g. Dawn 3pk"></div>
+      <div class="field"><label>Length (in)</label><input type="number" id="new-l" placeholder="18" min="1"></div>
+      <div class="field"><label>Width (in)</label><input type="number" id="new-w" placeholder="12" min="1"></div>
+      <div class="field"><label>Height (in)</label><input type="number" id="new-h" placeholder="10" min="1"></div>
+      <div class="field"><label>Weight (lb)</label><input type="number" id="new-wt" placeholder="24" min="0.1" step="0.1"></div>
+      <div class="field"><label>Units/Case</label><input type="number" id="new-upc" placeholder="6" min="1"></div>
+      <div class="field"><label>Mins/Case</label><input type="number" id="new-mins" placeholder="2.5" min="0" step="0.1"></div>
+      <div class="field"><label>Prep Type</label><select id="new-prep"><option value="no-prep">No Prep</option><option value="label">Label Only</option><option value="boxed">Boxed</option><option value="multipack">Multipack</option><option value="other">Other…</option></select></div>
+      <div class="field" style="justify-content:flex-end"><button class="btn btn-primary" onclick="addSKU()">+ Add SKU</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- THIS WEEK -->
+<div id="tab-week" style="display:none">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Shipment folder</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="btn-refresh" class="btn btn-shipment" onclick="refreshFromFolder()" style="display:none">↻ Reload latest file</button>
+        <button id="btn-disconnect" class="btn btn-ghost" onclick="disconnectFolder()" style="display:none;font-size:11px;padding:5px 12px">Disconnect</button>
+      </div>
+    </div>
+    <div id="shipment-feedback" class="feedback"></div>
+    <div id="folder-connected" style="display:none">
+      <div class="folder-panel connected">
+        <div class="folder-status">
+          <div class="status-dot on"></div>
+          <div class="status-text">Watching folder: <span style="color:var(--accent2)" id="folder-name-display">—</span></div>
+        </div>
+        <div class="last-loaded" id="last-loaded-info" style="display:none">
+          Last loaded: <strong id="last-loaded-file">—</strong> &nbsp;·&nbsp; <span id="last-loaded-time">—</span>
+        </div>
+      </div>
+    </div>
+    <div id="folder-disconnected">
+      <div class="folder-panel disconnected">
+        <div class="folder-status">
+          <div class="status-dot off"></div>
+          <div class="status-text"><strong>No folder connected.</strong> <span style="color:var(--muted)">Connect once — auto-loads your newest shipment file every time.</span></div>
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-primary" onclick="connectFolder()">📁 Connect shipment folder</button>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">Pick the folder where your WO_*.xlsx files are saved</span>
+      </div>
+      <div class="manual-fallback" style="margin-top:16px"
+        ondragover="event.preventDefault();this.classList.add('drag-over')"
+        ondragleave="this.classList.remove('drag-over')"
+        ondrop="handleXLSXDrop(event)">
+        <p>Or drag & drop a shipment file here as a one-off</p>
+        <button class="btn btn-ghost" style="font-size:11px" onclick="document.getElementById('xlsx-file-input').click()">⬆ Browse for file</button>
+      </div>
+      <input type="file" id="xlsx-file-input" accept=".xlsx,.xls" onchange="handleXLSXInput(this)">
+    </div>
+    <div id="unmatched-panel" style="display:none;margin-top:16px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:8px">⚠ SKUs in shipment not in library:</div>
+      <table class="warn-table"><thead><tr><th>Amazon SKU</th><th>Units</th><th>Action</th></tr></thead><tbody id="unmatched-tbody"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Cases to prep this week</span>
+      <button class="btn btn-ghost" onclick="clearQtys()">Clear quantities</button>
+    </div>
+    <div id="week-qty-list" class="week-grid"><div class="empty-state" style="grid-column:1/-1">Add SKUs in the SKU Library tab first</div></div>
+  </div>
+</div>
+
+<!-- PREP ORDER -->
+<div id="tab-sequence" style="display:none">
+  <div id="seq-output"><div class="empty-state">Load a shipment file or enter quantities in the "This Week" tab</div></div>
+</div>
+
+<!-- PALLET BUILD -->
+<div id="tab-palletbuild" style="display:none">
+  <div id="build-output"><div class="empty-state">Load quantities first, then come back here to see the pallet build plan</div></div>
+</div>
+
+
+<!-- Timer Modal -->
+<div id="timer-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:min(480px,95vw);max-height:90vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Case Timer</div>
+        <div id="timer-sku-name" style="font-size:16px;font-weight:600"></div>
+      </div>
+      <button class="btn btn-ghost" onclick="closeTimer()" style="font-size:18px;padding:4px 10px">✕</button>
+    </div>
+    <div class="timer-panel">
+      <div class="timer-display" id="timer-display">0:00.0</div>
+      <div class="timer-btns">
+        <button class="btn btn-primary" id="btn-timer-start" onclick="timerStart()">▶ Start</button>
+        <button class="btn btn-ghost" id="btn-timer-pause" onclick="timerPause()" style="display:none">⏸ Pause</button>
+        <button class="btn btn-ghost" id="btn-timer-resume" onclick="timerResume()" style="display:none">▶ Resume</button>
+        <button class="btn" style="background:var(--accent2);color:#0f1117;font-weight:600" id="btn-timer-stop" onclick="timerStop()" style="display:none">⏹ Stop & Log</button>
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-bottom:8px">
+        Time each case from first touch to outbound pallet. Log as many runs as you like.
+      </div>
+      <div class="timer-runs" id="timer-runs"></div>
+      <div class="timer-avg" id="timer-avg" style="display:none"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeTimer()">Done</button>
+    </div>
+  </div>
+</div>
+</div><!-- .app -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
+// ── Timer state ──
+let timerSkuId=null,timerInterval=null,timerStart_ms=0,timerElapsed=0,timerRunning=false,timerPaused=false;
+
+function openTimer(id){
+  timerSkuId=id;
+  const s=skus.find(x=>x.id===id);
+  if(!s) return;
+  document.getElementById('timer-sku-name').textContent=s.name;
+  timerElapsed=0;timerRunning=false;timerPaused=false;
+  clearInterval(timerInterval);
+  document.getElementById('timer-display').textContent='0:00.0';
+  document.getElementById('timer-display').className='timer-display';
+  showTimerBtns('idle');
+  renderTimerRuns(s);
+  document.getElementById('timer-modal').style.display='flex';
+}
+
+function closeTimer(){
+  clearInterval(timerInterval);timerRunning=false;
+  document.getElementById('timer-modal').style.display='none';
+  renderSKUs(); // refresh badges
+}
+
+function showTimerBtns(state){
+  document.getElementById('btn-timer-start').style.display=state==='idle'?'':'none';
+  document.getElementById('btn-timer-pause').style.display=state==='running'?'':'none';
+  document.getElementById('btn-timer-resume').style.display=state==='paused'?'':'none';
+  document.getElementById('btn-timer-stop').style.display=state!=='idle'?'':'none';
+}
+
+function timerStart(){
+  timerElapsed=0;timerStart_ms=Date.now();timerRunning=true;timerPaused=false;
+  document.getElementById('timer-display').className='timer-display running';
+  showTimerBtns('running');
+  timerInterval=setInterval(timerTick,100);
+}
+
+function timerPause(){
+  clearInterval(timerInterval);
+  timerElapsed+=Date.now()-timerStart_ms;
+  timerPaused=true;timerRunning=false;
+  document.getElementById('timer-display').className='timer-display paused';
+  showTimerBtns('paused');
+}
+
+function timerResume(){
+  timerStart_ms=Date.now();timerRunning=true;timerPaused=false;
+  document.getElementById('timer-display').className='timer-display running';
+  showTimerBtns('running');
+  timerInterval=setInterval(timerTick,100);
+}
+
+function timerStop(){
+  clearInterval(timerInterval);
+  const total=timerElapsed+(timerRunning?Date.now()-timerStart_ms:0);
+  timerRunning=false;timerPaused=false;
+  const mins=total/60000;
+  const s=skus.find(x=>x.id===timerSkuId);
+  if(!s) return;
+  if(!s.timedRuns) s.timedRuns=[];
+  s.timedRuns.push({ms:total,mins:parseFloat(mins.toFixed(4)),ts:new Date().toLocaleTimeString()});
+  // Recalculate average
+  s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
+  s.hasTiming=true;
+  save();
+  renderTimerRuns(s);
+  // Reset for next case
+  timerElapsed=0;timerRunning=false;
+  document.getElementById('timer-display').textContent='0:00.0';
+  document.getElementById('timer-display').className='timer-display';
+  showTimerBtns('idle');
+}
+
+function timerTick(){
+  const total=timerElapsed+(Date.now()-timerStart_ms);
+  const m=Math.floor(total/60000),s=Math.floor((total%60000)/1000),t=Math.floor((total%1000)/100);
+  document.getElementById('timer-display').textContent=`${m}:${String(s).padStart(2,'0')}.${t}`;
+}
+
+function fmtMs(ms){
+  const m=Math.floor(ms/60000),s=Math.floor((ms%60000)/1000),t=Math.floor((ms%1000)/100);
+  return `${m}:${String(s).padStart(2,'0')}.${t}`;
+}
+
+function discardRun(skuId,runIdx){
+  const s=skus.find(x=>x.id===skuId);
+  if(!s||!s.timedRuns) return;
+  s.timedRuns.splice(runIdx,1);
+  if(s.timedRuns.length>0){
+    s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
+  } else {
+    s.timedAvg=null; s.hasTiming=false;
+  }
+  save();renderTimerRuns(s);
+}
+
+function renderTimerRuns(s){
+  const runsEl=document.getElementById('timer-runs');
+  const avgEl=document.getElementById('timer-avg');
+  if(!s.timedRuns||!s.timedRuns.length){
+    runsEl.innerHTML='<div style="text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px;padding:12px">No runs yet — hit Start to begin timing</div>';
+    avgEl.style.display='none'; return;
+  }
+  runsEl.innerHTML=s.timedRuns.map((r,i)=>`
+    <div class="timer-run-row">
+      <span style="color:var(--muted)">#${i+1}</span>
+      <span>${fmtMs(r.ms)}</span>
+      <span style="color:var(--muted)">${r.mins.toFixed(2)} min</span>
+      <span style="color:var(--muted);font-size:10px">${r.ts}</span>
+      <button onclick="discardRun(${s.id},${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 4px" title="Discard this run">✕</button>
+    </div>`).join('');
+  avgEl.style.display='';
+  avgEl.textContent=`Average: ${s.timedAvg.toFixed(2)} min/case over ${s.timedRuns.length} run${s.timedRuns.length!==1?'s':''}`;
+}
+
+// ── Shift time settings (stored in localStorage) ──
+let shiftSettings=JSON.parse(localStorage.getItem('fba_shift')||'{"setupMins":45,"bufferPct":20}');
+function saveShift(){localStorage.setItem('fba_shift',JSON.stringify(shiftSettings));}
+
+// ── Inject shift estimator into Prep Order tab ──
+// Called from within renderSequence after the summary bar
+function renderShiftEstimator(el, sorted, totalMins, untimedSkus){
+  const setupMins=shiftSettings.setupMins||0;
+  const bufferPct=shiftSettings.bufferPct||0;
+  const subtotal=totalMins+setupMins;
+  const bufferMins=subtotal*(bufferPct/100);
+  const grandTotal=subtotal+bufferMins;
+
+  const warnHtml=untimedSkus.length?
+    `<div class="untimed-warn">⚠ ${untimedSkus.length} SKU${untimedSkus.length!==1?'s':''} have no timing data: ${untimedSkus.map(s=>s.name.split(' ').slice(0,3).join(' ')).join(', ')} — estimate excludes these cases. Go to SKU Library → ⏱ Time to log runs.</div>`:'';
+
+  return `
+  <div class="shift-card">
+    <div class="card-header" style="margin-bottom:14px"><span class="card-title">Shift time estimate</span></div>
+    <div class="settings-row">
+      <div class="settings-field">
+        <label>Setup & breakdown (min)</label>
+        <input type="number" min="0" step="5" value="${setupMins}"
+          oninput="shiftSettings.setupMins=parseInt(this.value)||0;saveShift();refreshShiftEstimate()">
+      </div>
+      <div class="settings-field">
+        <label>PF&D buffer (%)</label>
+        <input type="number" min="0" max="100" step="5" value="${bufferPct}"
+          oninput="shiftSettings.bufferPct=parseInt(this.value)||0;saveShift();refreshShiftEstimate()">
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);align-self:flex-end;padding-bottom:8px">
+        Buffer covers: label printing, bathroom, breaks, interruptions
+      </div>
+    </div>
+    <div id="shift-breakdown">
+      <div class="shift-row"><span class="shift-label">Case prep work</span><span class="shift-val">${fmtTime(totalMins)}</span></div>
+      <div class="shift-row"><span class="shift-label">Setup & breakdown</span><span class="shift-val">${fmtTime(setupMins)}</span></div>
+      <div class="shift-row"><span class="shift-label">PF&D buffer (${bufferPct}%)</span><span class="shift-val">+ ${fmtTime(bufferMins)}</span></div>
+      <div class="shift-total">
+        <span class="shift-total-label">Estimated shift time</span>
+        <span class="shift-total-val">${fmtTime(grandTotal)}</span>
+      </div>
+    </div>
+    ${warnHtml}
+  </div>`;
+}
+
+function refreshShiftEstimate(){
+  // Re-render just the shift card without rebuilding the whole tab
+  const active=skus.filter(s=>qtys[s.id]>0).map(s=>({...s,cases:qtys[s.id]}));
+  if(!active.length) return;
+  const effMins=s=>s.timedAvg!=null?s.timedAvg:(s.minsPerCase||0);
+  const sorted=[...active].sort((a,b)=>b.wt-a.wt);
+  const totalMins=sorted.reduce((s,x)=>s+effMins(x)*x.cases,0);
+  const untimedSkus=sorted.filter(x=>x.timedAvg==null&&!(x.minsPerCase));
+  const shiftEl=document.getElementById('shift-estimator-wrap');
+  if(shiftEl) shiftEl.innerHTML=renderShiftEstimator(null,sorted,totalMins,untimedSkus);
+}
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js">
+// ── Timer state ──
+let timerSkuId=null,timerInterval=null,timerStart_ms=0,timerElapsed=0,timerRunning=false,timerPaused=false;
+
+function openTimer(id){
+  timerSkuId=id;
+  const s=skus.find(x=>x.id===id);
+  if(!s) return;
+  document.getElementById('timer-sku-name').textContent=s.name;
+  timerElapsed=0;timerRunning=false;timerPaused=false;
+  clearInterval(timerInterval);
+  document.getElementById('timer-display').textContent='0:00.0';
+  document.getElementById('timer-display').className='timer-display';
+  showTimerBtns('idle');
+  renderTimerRuns(s);
+  document.getElementById('timer-modal').style.display='flex';
+}
+
+function closeTimer(){
+  clearInterval(timerInterval);timerRunning=false;
+  document.getElementById('timer-modal').style.display='none';
+  renderSKUs(); // refresh badges
+}
+
+function showTimerBtns(state){
+  document.getElementById('btn-timer-start').style.display=state==='idle'?'':'none';
+  document.getElementById('btn-timer-pause').style.display=state==='running'?'':'none';
+  document.getElementById('btn-timer-resume').style.display=state==='paused'?'':'none';
+  document.getElementById('btn-timer-stop').style.display=state!=='idle'?'':'none';
+}
+
+function timerStart(){
+  timerElapsed=0;timerStart_ms=Date.now();timerRunning=true;timerPaused=false;
+  document.getElementById('timer-display').className='timer-display running';
+  showTimerBtns('running');
+  timerInterval=setInterval(timerTick,100);
+}
+
+function timerPause(){
+  clearInterval(timerInterval);
+  timerElapsed+=Date.now()-timerStart_ms;
+  timerPaused=true;timerRunning=false;
+  document.getElementById('timer-display').className='timer-display paused';
+  showTimerBtns('paused');
+}
+
+function timerResume(){
+  timerStart_ms=Date.now();timerRunning=true;timerPaused=false;
+  document.getElementById('timer-display').className='timer-display running';
+  showTimerBtns('running');
+  timerInterval=setInterval(timerTick,100);
+}
+
+function timerStop(){
+  clearInterval(timerInterval);
+  const total=timerElapsed+(timerRunning?Date.now()-timerStart_ms:0);
+  timerRunning=false;timerPaused=false;
+  const mins=total/60000;
+  const s=skus.find(x=>x.id===timerSkuId);
+  if(!s) return;
+  if(!s.timedRuns) s.timedRuns=[];
+  s.timedRuns.push({ms:total,mins:parseFloat(mins.toFixed(4)),ts:new Date().toLocaleTimeString()});
+  // Recalculate average
+  s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
+  s.hasTiming=true;
+  save();
+  renderTimerRuns(s);
+  // Reset for next case
+  timerElapsed=0;timerRunning=false;
+  document.getElementById('timer-display').textContent='0:00.0';
+  document.getElementById('timer-display').className='timer-display';
+  showTimerBtns('idle');
+}
+
+function timerTick(){
+  const total=timerElapsed+(Date.now()-timerStart_ms);
+  const m=Math.floor(total/60000),s=Math.floor((total%60000)/1000),t=Math.floor((total%1000)/100);
+  document.getElementById('timer-display').textContent=`${m}:${String(s).padStart(2,'0')}.${t}`;
+}
+
+function fmtMs(ms){
+  const m=Math.floor(ms/60000),s=Math.floor((ms%60000)/1000),t=Math.floor((ms%1000)/100);
+  return `${m}:${String(s).padStart(2,'0')}.${t}`;
+}
+
+function discardRun(skuId,runIdx){
+  const s=skus.find(x=>x.id===skuId);
+  if(!s||!s.timedRuns) return;
+  s.timedRuns.splice(runIdx,1);
+  if(s.timedRuns.length>0){
+    s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
+  } else {
+    s.timedAvg=null; s.hasTiming=false;
+  }
+  save();renderTimerRuns(s);
+}
+
+function renderTimerRuns(s){
+  const runsEl=document.getElementById('timer-runs');
+  const avgEl=document.getElementById('timer-avg');
+  if(!s.timedRuns||!s.timedRuns.length){
+    runsEl.innerHTML='<div style="text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px;padding:12px">No runs yet — hit Start to begin timing</div>';
+    avgEl.style.display='none'; return;
+  }
+  runsEl.innerHTML=s.timedRuns.map((r,i)=>`
+    <div class="timer-run-row">
+      <span style="color:var(--muted)">#${i+1}</span>
+      <span>${fmtMs(r.ms)}</span>
+      <span style="color:var(--muted)">${r.mins.toFixed(2)} min</span>
+      <span style="color:var(--muted);font-size:10px">${r.ts}</span>
+      <button onclick="discardRun(${s.id},${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 4px" title="Discard this run">✕</button>
+    </div>`).join('');
+  avgEl.style.display='';
+  avgEl.textContent=`Average: ${s.timedAvg.toFixed(2)} min/case over ${s.timedRuns.length} run${s.timedRuns.length!==1?'s':''}`;
+}
+
+// ── Shift time settings (stored in localStorage) ──
+let shiftSettings=JSON.parse(localStorage.getItem('fba_shift')||'{"setupMins":45,"bufferPct":20}');
+function saveShift(){localStorage.setItem('fba_shift',JSON.stringify(shiftSettings));}
+
+// ── Inject shift estimator into Prep Order tab ──
+// Called from within renderSequence after the summary bar
+function renderShiftEstimator(el, sorted, totalMins, untimedSkus){
+  const setupMins=shiftSettings.setupMins||0;
+  const bufferPct=shiftSettings.bufferPct||0;
+  const subtotal=totalMins+setupMins;
+  const bufferMins=subtotal*(bufferPct/100);
+  const grandTotal=subtotal+bufferMins;
+
+  const warnHtml=untimedSkus.length?
+    `<div class="untimed-warn">⚠ ${untimedSkus.length} SKU${untimedSkus.length!==1?'s':''} have no timing data: ${untimedSkus.map(s=>s.name.split(' ').slice(0,3).join(' ')).join(', ')} — estimate excludes these cases. Go to SKU Library → ⏱ Time to log runs.</div>`:'';
+
+  return `
+  <div class="shift-card">
+    <div class="card-header" style="margin-bottom:14px"><span class="card-title">Shift time estimate</span></div>
+    <div class="settings-row">
+      <div class="settings-field">
+        <label>Setup & breakdown (min)</label>
+        <input type="number" min="0" step="5" value="${setupMins}"
+          oninput="shiftSettings.setupMins=parseInt(this.value)||0;saveShift();refreshShiftEstimate()">
+      </div>
+      <div class="settings-field">
+        <label>PF&D buffer (%)</label>
+        <input type="number" min="0" max="100" step="5" value="${bufferPct}"
+          oninput="shiftSettings.bufferPct=parseInt(this.value)||0;saveShift();refreshShiftEstimate()">
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);align-self:flex-end;padding-bottom:8px">
+        Buffer covers: label printing, bathroom, breaks, interruptions
+      </div>
+    </div>
+    <div id="shift-breakdown">
+      <div class="shift-row"><span class="shift-label">Case prep work</span><span class="shift-val">${fmtTime(totalMins)}</span></div>
+      <div class="shift-row"><span class="shift-label">Setup & breakdown</span><span class="shift-val">${fmtTime(setupMins)}</span></div>
+      <div class="shift-row"><span class="shift-label">PF&D buffer (${bufferPct}%)</span><span class="shift-val">+ ${fmtTime(bufferMins)}</span></div>
+      <div class="shift-total">
+        <span class="shift-total-label">Estimated shift time</span>
+        <span class="shift-total-val">${fmtTime(grandTotal)}</span>
+      </div>
+    </div>
+    ${warnHtml}
+  </div>`;
+}
+
+function refreshShiftEstimate(){
+  // Re-render just the shift card without rebuilding the whole tab
+  const active=skus.filter(s=>qtys[s.id]>0).map(s=>({...s,cases:qtys[s.id]}));
+  if(!active.length) return;
+  const effMins=s=>s.timedAvg!=null?s.timedAvg:(s.minsPerCase||0);
+  const sorted=[...active].sort((a,b)=>b.wt-a.wt);
+  const totalMins=sorted.reduce((s,x)=>s+effMins(x)*x.cases,0);
+  const untimedSkus=sorted.filter(x=>x.timedAvg==null&&!(x.minsPerCase));
+  const shiftEl=document.getElementById('shift-estimator-wrap');
+  if(shiftEl) shiftEl.innerHTML=renderShiftEstimator(null,sorted,totalMins,untimedSkus);
+}
+
+</script>
+<script>
+// ── Constants & state ──
+const PALLET_W=48,PALLET_D=40,PALLET_MAX_H=66,PALLET_MAX_WT=1500;
+const PALLET_STYLES=[
+  {bg:'#f0c040',fg:'#0f1117',bar:'var(--accent)'},
+  {bg:'#4ade9a',fg:'#0f1117',bar:'var(--accent2)'},
+  {bg:'#9499bb',fg:'#0f1117',bar:'var(--label)'},
+  {bg:'#8b6cf7',fg:'#fff',  bar:'#8b6cf7'},
+];
+// Color palette for SKUs (hex)
+const SKU_COLORS=['#f0c040','#4ade9a','#60a5fa','#f472b6','#fb923c','#a78bfa','#34d399','#f87171','#38bdf8','#facc15','#86efac','#c084fc'];
+
+let skus=JSON.parse(localStorage.getItem('fba_skus3')||'[]');
+let qtys=JSON.parse(localStorage.getItem('fba_qtys3')||'{}');
+let folderMeta=JSON.parse(localStorage.getItem('fba_folder')||'null');
+let folderHandle=null;
+
+// Pallet build state
+let currentPallets=[];
+let activePalletIdx=0;
+let activeLayerIdx=0;
+let activeView='3d'; // '3d' or '2d'
+let threeRenderer=null,threeScene=null,threeCamera=null,threeControls=null;
+
+function save(){
+  localStorage.setItem('fba_skus3',JSON.stringify(skus));
+  localStorage.setItem('fba_qtys3',JSON.stringify(qtys));
+  localStorage.setItem('fba_folder',JSON.stringify(folderMeta));
+}
+
+// ── Tabs ──
+const TAB_NAMES=['skus','week','sequence','palletbuild'];
+function switchTab(name){
+  TAB_NAMES.forEach(t=>{
+    document.getElementById('tab-'+t).style.display=t===name?'':'none';
+    document.querySelectorAll('.tab')[TAB_NAMES.indexOf(t)].classList.toggle('active',t===name);
+  });
+  if(name==='week') renderWeek();
+  if(name==='sequence') renderSequence();
+  if(name==='palletbuild') renderPalletBuild();
+}
+
+// ── Feedback ──
+function showFeedback(elId,msg,type,persist=false){
+  const el=document.getElementById(elId);
+  el.innerHTML=msg; el.className='feedback '+type; el.style.display='block';
+  if(!persist) setTimeout(()=>{ if(el.className.includes(type)) el.style.display='none'; },7000);
+}
+
+// ── Folder ──
+async function connectFolder(){
+  if(!('showDirectoryPicker' in window)){showFeedback('shipment-feedback','Use Chrome or Edge 86+.','error');return;}
+  try{
+    folderHandle=await window.showDirectoryPicker({mode:'read'});
+    folderMeta={name:folderHandle.name,lastFile:null,lastLoaded:null};
+    save(); renderFolderUI(); await refreshFromFolder();
+  }catch(e){if(e.name!=='AbortError') showFeedback('shipment-feedback','Could not open folder: '+e.message,'error');}
+}
+async function refreshFromFolder(){
+  if(!folderHandle){
+    if(!folderMeta){showFeedback('shipment-feedback','No folder connected.','error');return;}
+    try{folderHandle=await window.showDirectoryPicker({mode:'read'});folderMeta.name=folderHandle.name;save();renderFolderUI();}
+    catch(e){if(e.name!=='AbortError') showFeedback('shipment-feedback','Please re-connect your folder.','warn',true);return;}
+  }
+  const files=[];
+  try{for await(const[name,handle] of folderHandle.entries()){if(handle.kind==='file'&&/\.(xlsx|xls)$/i.test(name)) files.push({name,handle});}}
+  catch(e){showFeedback('shipment-feedback','Could not read folder.','error');folderHandle=null;return;}
+  if(!files.length){showFeedback('shipment-feedback','No .xlsx files found.','warn');return;}
+  files.sort((a,b)=>b.name.localeCompare(a.name,undefined,{numeric:true}));
+  const newest=files[0];
+  if(folderMeta&&folderMeta.lastFile===newest.name){showFeedback('shipment-feedback',`✓ Already loaded — <strong>${newest.name}</strong> is the latest.`,'success');return;}
+  const file=await newest.handle.getFile();
+  const buf=await file.arrayBuffer();
+  processXLSXBuffer(buf,newest.name);
+}
+function disconnectFolder(){folderHandle=null;folderMeta=null;save();renderFolderUI();}
+function renderFolderUI(){
+  const c=!!folderMeta;
+  document.getElementById('folder-connected').style.display=c?'':'none';
+  document.getElementById('folder-disconnected').style.display=c?'none':'';
+  document.getElementById('btn-refresh').style.display=c?'':'none';
+  document.getElementById('btn-disconnect').style.display=c?'':'none';
+  if(c){
+    document.getElementById('folder-name-display').textContent=folderMeta.name||'—';
+    const li=document.getElementById('last-loaded-info');
+    if(folderMeta.lastFile){
+      li.style.display='';
+      document.getElementById('last-loaded-file').textContent=folderMeta.lastFile;
+      document.getElementById('last-loaded-time').textContent=folderMeta.lastLoaded||'';
+    } else li.style.display='none';
+  }
+}
+
+// ── XLSX ──
+function processXLSXBuffer(buf,filename){
+  try{
+    const wb=XLSX.read(buf,{type:'array'});
+    const preferred=['Create Draft Template','Sheet1','shipment','data'];
+    let ws=null;
+    for(const n of preferred){if(wb.SheetNames.includes(n)){ws=wb.Sheets[n];break;}}
+    if(!ws) ws=wb.Sheets[wb.SheetNames[0]];
+    // Amazon shipment files have a metadata row 1 ("Required"/"Optional") before the real header.
+    // Scan up to 10 rows to find the row containing 'SKU' and 'Quantity' column names.
+    const allRows=XLSX.utils.sheet_to_json(ws,{defval:null,header:1});
+    if(!allRows.length){showFeedback('shipment-feedback','No data rows found.','error');return;}
+    let headerRowIdx=0;
+    for(let ri=0;ri<Math.min(allRows.length,10);ri++){
+      const cells=allRows[ri].map(c=>String(c||'').toLowerCase());
+      if(cells.some(c=>c==='sku'||c==='asin')&&cells.some(c=>c.includes('quantity')||c==='qty')){
+        headerRowIdx=ri; break;
+      }
+    }
+    const rows=XLSX.utils.sheet_to_json(ws,{defval:null,range:headerRowIdx});
+    if(!rows.length){showFeedback('shipment-feedback','No data rows found.','error');return;}
+    const keys=Object.keys(rows.find(r=>Object.keys(r).length>0)||rows[0]);
+    const fk=names=>keys.find(k=>names.some(n=>k.toLowerCase().includes(n)))||null;
+    const skuKey=fk(['sku','asin','item']),qtyKey=fk(['quantity','qty','units','amount']);
+    if(!skuKey||!qtyKey){showFeedback('shipment-feedback',`Can't find SKU/Qty columns. Found: ${keys.join(', ')}`,'error');return;}
+    qtys={};
+    let matched=0,unmatched=[];
+    for(const row of rows){
+      const amzSku=String(row[skuKey]||'').trim();
+      const units=parseInt(row[qtyKey])||0;
+      if(!amzSku||amzSku.toLowerCase()==='sku'||!units) continue;
+      const lib=skus.find(s=>(s.amzSku&&s.amzSku.toLowerCase()===amzSku.toLowerCase())||s.name.toLowerCase()===amzSku.toLowerCase());
+      if(lib){qtys[lib.id]=Math.ceil(units/lib.upc);matched++;}
+      else unmatched.push({amzSku,units});
+    }
+    if(folderMeta){folderMeta.lastFile=filename;folderMeta.lastLoaded=new Date().toLocaleString();renderFolderUI();}
+    save();renderWeek();
+    const panel=document.getElementById('unmatched-panel');
+    if(unmatched.length){
+      panel.style.display='';
+      document.getElementById('unmatched-tbody').innerHTML=unmatched.map(u=>`<tr><td>${u.amzSku}</td><td>${u.units}</td><td><button class="btn btn-ghost" style="font-size:10px;padding:3px 8px" onclick="prefillNewSKU('${u.amzSku}')">+ Add</button></td></tr>`).join('');
+      showFeedback('shipment-feedback',`✓ ${filename} — ${matched} matched · ${unmatched.length} unmatched`,'warn',true);
+    } else {
+      panel.style.display='none';
+      showFeedback('shipment-feedback',`✓ ${filename} — all ${matched} SKUs matched`,'success');
+    }
+  }catch(err){showFeedback('shipment-feedback','Error: '+err.message,'error');}
+}
+function handleXLSXDrop(e){e.preventDefault();e.currentTarget.classList.remove('drag-over');if(e.dataTransfer.files[0]) readXLSXFile(e.dataTransfer.files[0]);}
+function handleXLSXInput(input){if(input.files[0]) readXLSXFile(input.files[0]);input.value='';}
+function readXLSXFile(file){const r=new FileReader();r.onload=e=>processXLSXBuffer(e.target.result,file.name);r.readAsArrayBuffer(file);}
+function prefillNewSKU(amzSku){switchTab('skus');document.getElementById('new-amzsku').value=amzSku;document.getElementById('new-name').focus();}
+
+// ── CSV ──
+function downloadTemplate(){
+  const rows=['amazon_sku,name,length,width,height,weight_lb,units_per_case,prep_type,mins_per_case','1054983958,Dawn Dish Soap 3pk,18,12,10,24,6,multipack,2.5','62-5420-OYBV,Tide Pods 42ct,14,10,8,18,4,label,1.0'].join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(rows);a.download='fba-sku-template.csv';a.click();
+}
+function handleCSVDrop(e){e.preventDefault();document.getElementById('drop-zone').classList.remove('drag-over');if(e.dataTransfer.files[0]) parseCSVFile(e.dataTransfer.files[0]);}
+function handleCSVInput(input){if(input.files[0]) parseCSVFile(input.files[0]);input.value='';}
+function parseCSVFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const lines=e.target.result.trim().split('\n').filter(l=>l.trim());
+    if(lines.length<2){showFeedback('import-feedback','Need header + data rows.','error');return;}
+    const hdr=lines[0].toLowerCase().split(',').map(h=>h.trim().replace(/"/g,''));
+    const col=names=>names.map(n=>hdr.findIndex(h=>h.includes(n))).find(i=>i>=0)??-1;
+    const iAmz=col(['amazon_sku','amz','asin','sku']),iName=col(['name','display','product','description','title']);
+    const iL=col(['length','len']),iW=col(['width','wid']),iH=col(['height','hgt']);
+    const iWt=col(['weight','wt','lbs','lb']),iUpc=col(['units','upc','per_case','count','qty_per']),iPrep=col(['prep','type']),iMins=col(['mins','minutes','time','min_per','mins_per']);
+    if(iL<0||iW<0||iH<0||iWt<0){showFeedback('import-feedback','Missing required columns.','error');return;}
+    let added=0,skipped=0;
+    for(let i=1;i<lines.length;i++){
+      const c=lines[i].split(',').map(v=>v.trim().replace(/"/g,''));
+      const amzSku=iAmz>=0?c[iAmz]:'';const name=(iName>=0?c[iName]:'')||amzSku;
+      const l=parseFloat(c[iL]),w=parseFloat(c[iW]),h=parseFloat(c[iH]),wt=parseFloat(c[iWt]);
+      const upc=iUpc>=0?(parseInt(c[iUpc])||1):1;
+      const prep=(iPrep>=0?c[iPrep]:'').toLowerCase().includes('multi')?'multipack':'label';
+      const minsPerCase=iMins>=0?(parseFloat(c[iMins])||0):0;
+      if(!name||[l,w,h,wt].some(isNaN)){skipped++;continue;}
+      const dk=(amzSku||name).toLowerCase();
+      if(skus.find(s=>(s.amzSku||s.name).toLowerCase()===dk)){skipped++;continue;}
+      skus.push({id:Date.now()+i,amzSku,name,l,w,h,wt,upc,prep,minsPerCase});added++;
+    }
+    save();renderSKUs();
+    showFeedback('import-feedback',`✓ Imported ${added}${skipped?` (${skipped} skipped)`:''}`,added>0?'success':'error');
+  };
+  reader.readAsText(file);
+}
+
+// ── SKU Library ──
+function addSKU(){
+  const amzSku=document.getElementById('new-amzsku').value.trim();
+  const name=document.getElementById('new-name').value.trim();
+  const l=parseFloat(document.getElementById('new-l').value),w=parseFloat(document.getElementById('new-w').value),h=parseFloat(document.getElementById('new-h').value);
+  const wt=parseFloat(document.getElementById('new-wt').value),upc=parseInt(document.getElementById('new-upc').value);
+  const prep=document.getElementById('new-prep').value,displayName=name||amzSku;
+  const minsPerCase=parseFloat(document.getElementById('new-mins').value)||0;
+  if(!displayName||[l,w,h,wt,upc].some(v=>!v)){alert('Fill in all fields.');return;}
+  skus.push({id:Date.now(),amzSku,name:displayName,l,w,h,wt,upc,prep,minsPerCase});
+  save();renderSKUs();
+  ['new-amzsku','new-name','new-l','new-w','new-h','new-wt','new-upc','new-mins'].forEach(id=>document.getElementById(id).value='');
+}
+function deleteSKU(id){skus=skus.filter(s=>s.id!==id);delete qtys[id];save();renderSKUs();}
+function prepLabel(p){
+  const map={'no-prep':'No Prep','label':'Label Only','boxed':'Boxed','multipack':'Multipack'};
+  return map[p]||p||'—';
+}
+function prepClass(p){
+  return ['no-prep','label','boxed','multipack'].includes(p)?p:'other';
+}
+
+function editCell(skuId, field, currentVal, el, type='text'){
+  const s=skus.find(x=>x.id===skuId); if(!s) return;
+  let input;
+  if(field==='prep'){
+    input=document.createElement('select');
+    input.className='inline-select';
+    ['no-prep','label','boxed','multipack','other'].forEach(v=>{
+      const o=document.createElement('option');
+      o.value=v; o.textContent=prepLabel(v);
+      if(v===currentVal) o.selected=true;
+      input.appendChild(o);
+    });
+  } else {
+    input=document.createElement('input');
+    input.type=type; input.className='inline-input';
+    input.value=currentVal||'';
+    if(type==='number'){input.step='any';input.min='0';}
+  }
+  el.innerHTML=''; el.appendChild(input); input.focus();
+  if(type!=='number') input.select && input.select();
+
+  const commit=()=>{
+    let val=input.value.trim();
+    if(field==='prep'){ s[field]=val; }
+    else if(['l','w','h','wt'].includes(field)){ s[field]=parseFloat(val)||0; }
+    else if(field==='upc'){ s[field]=parseInt(val)||1; }
+    else if(field==='minsPerCase'){
+      const n=parseFloat(val);
+      s.minsPerCase=isNaN(n)?null:parseFloat(n.toFixed(4));
+      // Only update timedAvg if no timed runs exist
+      if(!s.timedRuns||!s.timedRuns.length) s.timedAvg=s.minsPerCase;
+    }
+    else { s[field]=val; }
+    save(); renderSKUs();
+  };
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') commit(); if(e.key==='Escape'){ save(); renderSKUs(); } });
+}
+
+function renderSKUs(){
+  const tbody=document.getElementById('sku-tbody');
+  document.getElementById('sku-count').textContent=skus.length+' SKU'+(skus.length!==1?'s':'');
+  if(!skus.length){tbody.innerHTML='<tr><td colspan="10" style="padding:24px;text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px">No SKUs yet — import a CSV or add below</td></tr>';return;}
+  tbody.innerHTML=skus.map(s=>{
+    const timeBadge=s.timedAvg!=null?'timed':s.minsPerCase?'manual':'none';
+    const timeTxt=s.timedAvg!=null?s.timedAvg.toFixed(2)+' min':s.minsPerCase?s.minsPerCase+' min':'⚠ time me';
+    const minsDisplay=s.timedAvg!=null
+      ? `<span style="color:var(--accent2);font-size:12px">${s.timedAvg.toFixed(2)}</span><span style="color:var(--muted);font-size:10px"> (timed)</span>`
+      : `<span class="editable" onclick="editCell(${s.id},'minsPerCase',${s.minsPerCase||''},this,'number')" title="Click to edit">${s.minsPerCase||'—'}</span>`;
+    return `<tr class="sku-row">
+      <td><span class="editable" onclick="editCell(${s.id},'amzSku','${(s.amzSku||'').replace(/'/g,"\'")}',this)" title="Click to edit" style="font-family:var(--mono);font-size:11px;color:var(--label);word-break:break-all">${s.amzSku||'—'}</span></td>
+      <td>
+        <div style="font-weight:500;font-size:13px;line-height:1.3;margin-bottom:4px">
+          <span class="editable" onclick="editCell(${s.id},'name','${s.name.replace(/'/g,"\'")}',this)" title="Click to edit">${s.name}</span>
+        </div>
+        <span class="timing-badge ${timeBadge}" style="display:inline-block">${timeTxt}</span>
+      </td>
+      <td><span class="editable" onclick="editCell(${s.id},'l',${s.l},this,'number')" title="Click to edit length" style="font-family:var(--mono);font-size:13px;color:var(--muted)">${s.l||'?'}</span></td>
+      <td><span class="editable" onclick="editCell(${s.id},'w',${s.w},this,'number')" title="Click to edit width" style="font-family:var(--mono);font-size:13px;color:var(--muted)">${s.w||'?'}</span></td>
+      <td><span class="editable" onclick="editCell(${s.id},'h',${s.h},this,'number')" title="Click to edit height" style="font-family:var(--mono);font-size:13px;color:var(--muted)">${s.h||'?'}</span></td>
+      <td><span class="editable" onclick="editCell(${s.id},'wt',${s.wt},this,'number')" title="Click to edit weight" style="font-family:var(--mono);font-size:13px">${s.wt||'?'}</span></td>
+      <td><span class="editable" onclick="editCell(${s.id},'upc',${s.upc},this,'number')" title="Click to edit units per case" style="font-family:var(--mono);font-size:13px">${s.upc}</span></td>
+      <td style="font-family:var(--mono);font-size:13px">${minsDisplay}</td>
+      <td><span class="prep-badge ${prepClass(s.prep)}" onclick="editCell(${s.id},'prep','${s.prep}',this)" title="Click to change" style="display:inline-block;width:100%;text-align:center">${prepLabel(s.prep)}</span></td>
+      <td>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-shipment" style="padding:4px 8px;font-size:11px" onclick="openTimer(${s.id})">⏱ Time</button>
+          <button class="btn btn-danger" onclick="deleteSKU(${s.id})">✕</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Week ──
+function renderWeek(){
+  const el=document.getElementById('week-qty-list');
+  if(!skus.length){el.innerHTML='<div class="empty-state" style="grid-column:1/-1">Add SKUs first</div>';return;}
+  el.innerHTML=skus.map(s=>{
+    const cases=qtys[s.id]||0,isAuto=cases>0;
+    return `<div class="qty-row${isAuto?' auto-filled':''}"><div><div class="qty-sku">${s.name}${isAuto?'<span class="auto-badge">AUTO</span>':''}</div><div class="qty-amz">${s.amzSku||''}</div><div class="qty-meta">${isAuto?(cases*s.upc)+' units → ':''}${s.wt} lb/case · ${s.upc}/case</div></div><input type="number" style="width:70px;flex-shrink:0;background:var(--bg);border:1px solid ${isAuto?'rgba(240,192,64,.4)':'var(--border)'};color:var(--text);font-family:var(--mono);font-size:14px;border-radius:5px;padding:6px 10px;outline:none;text-align:center" placeholder="0" min="0" value="${cases||''}" oninput="qtys[${s.id}]=parseInt(this.value)||0;save()" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='${isAuto?'rgba(240,192,64,.4)':'var(--border)'}'"></div>`;
+  }).join('');
+}
+function clearQtys(){qtys={};save();renderWeek();}
+
+// ── Pallet builder ──
+function buildPallets(sorted){
+  const remaining=sorted.map(s=>({...s,casesLeft:s.cases}));
+  const pallets=[];
+  while(remaining.some(r=>r.casesLeft>0)){
+    const pallet={items:[],weightUsed:0,heightUsed:0};
+    for(const r of remaining){
+      if(r.casesLeft<=0) continue;
+      const bpl=Math.max(1,Math.floor((PALLET_W*PALLET_D)/(r.l*r.w)));
+      let placed=0;
+      while(r.casesLeft-placed>0){
+        const lc=Math.min(bpl,r.casesLeft-placed);
+        if(pallet.weightUsed+lc*r.wt>PALLET_MAX_WT||pallet.heightUsed+r.h>PALLET_MAX_H) break;
+        pallet.weightUsed+=lc*r.wt;pallet.heightUsed+=r.h;placed+=lc;
+      }
+      if(placed>0){pallet.items.push({sku:r,casesOnPallet:placed});r.casesLeft-=placed;}
+    }
+    if(pallet.items.length===0){
+      const stuck=remaining.find(r=>r.casesLeft>0);if(!stuck) break;
+      pallet.items.push({sku:stuck,casesOnPallet:1});pallet.weightUsed=stuck.wt;pallet.heightUsed=stuck.h;stuck.casesLeft-=1;
+    }
+    pallets.push(pallet);if(pallets.length>20) break;
+  }
+  return pallets;
+}
+
+// Build detailed layer plan for one pallet — returns array of layers
+// Each layer: { boxes: [{sku, x, y, w, d, caseNum}], heightInches, weightLbs, skuBreakdown }
+function buildLayerPlan(palletItems){
+  // ── Assign SKU colors ──
+  const skuColorMap={};
+  palletItems.forEach((item,i)=>{skuColorMap[item.sku.id]=SKU_COLORS[i%SKU_COLORS.length];});
+
+  // ── Flatten queue: heaviest SKU first, then by box volume desc ──
+  const sorted=[...palletItems].sort((a,b)=>b.sku.wt-a.sku.wt);
+  const queue=[];
+  sorted.forEach(item=>{
+    for(let i=0;i<item.casesOnPallet;i++)
+      queue.push({sku:item.sku,color:skuColorMap[item.sku.id],caseNum:i+1});
+  });
+
+  // ── Maximal Rectangles bin packer ──
+  // Tracks all maximal free rectangles on the 48×40 surface.
+  // For each box, scores every free rect × 2 orientations and picks best fit.
+  // "Best fit" = smallest leftover area after placement (tight fit).
+
+  function rectsFit(rx,ry,rw,rd,bw,bd){
+    return bw<=rw&&bd<=rd;
+  }
+
+  function splitFreeRects(freeRects,bx,by,bw,bd){
+    // Remove any free rect that overlaps the placed box, then add up-to-4 new splits
+    const newFree=[];
+    for(const r of freeRects){
+      const ox=Math.max(r.x,bx),oy=Math.max(r.y,by);
+      const ox2=Math.min(r.x+r.w,bx+bw),oy2=Math.min(r.y+r.d,by+bd);
+      if(ox>=ox2||oy>=oy2){newFree.push(r);continue;} // no overlap
+      // Left strip
+      if(r.x<bx) newFree.push({x:r.x,y:r.y,w:bx-r.x,d:r.d});
+      // Right strip
+      if(r.x+r.w>bx+bw) newFree.push({x:bx+bw,y:r.y,w:(r.x+r.w)-(bx+bw),d:r.d});
+      // Bottom strip
+      if(r.y<by) newFree.push({x:r.x,y:r.y,w:r.w,d:by-r.y});
+      // Top strip
+      if(r.y+r.d>by+bd) newFree.push({x:r.x,y:by+bd,w:r.w,d:(r.y+r.d)-(by+bd)});
+    }
+    return newFree;
+  }
+
+  function pruneFreeRects(freeRects){
+    // Remove any rect fully contained within another
+    return freeRects.filter((a,ai)=>!freeRects.some((b,bi)=>
+      bi!==ai&&b.x<=a.x&&b.y<=a.y&&b.x+b.w>=a.x+a.w&&b.y+b.d>=a.y+a.d
+    ));
+  }
+
+  function bestPlacement(freeRects,bw,bd){
+    // Returns {x,y,w,d,score} for best position, or null if no fit
+    // Score = leftover area after fit (lower = tighter)
+    let best=null;
+    for(const r of freeRects){
+      // Normal orientation
+      if(rectsFit(r.x,r.y,r.w,r.d,bw,bd)){
+        const score=(r.w-bw)*(r.d)+(r.d-bd)*(r.w); // short-side fit heuristic
+        if(!best||score<best.score) best={x:r.x,y:r.y,w:bw,d:bd,score};
+      }
+      // Rotated orientation (only if different)
+      if(bw!==bd&&rectsFit(r.x,r.y,r.w,r.d,bd,bw)){
+        const score=(r.w-bd)*(r.d)+(r.d-bw)*(r.w);
+        if(!best||score<best.score) best={x:r.x,y:r.y,w:bd,d:bw,score};
+      }
+    }
+    return best;
+  }
+
+  const layers=[];
+  // Track which queue indices are still unplaced
+  let remaining=[...queue.keys()]; // indices into queue[]
+
+  let safetyLimit=0;
+  while(remaining.length>0&&safetyLimit++<200){
+    // Start a new layer with full pallet free rect
+    let freeRects=[{x:0,y:0,w:PALLET_W,d:PALLET_D}];
+    const placed=[];
+    const usedThisLayer=new Set();
+
+    // Keep trying to place boxes until nothing fits
+    let progress=true;
+    while(progress){
+      progress=false;
+      // Try each remaining box (not yet placed this layer)
+      for(let ri=0;ri<remaining.length;ri++){
+        const qi=remaining[ri];
+        if(usedThisLayer.has(qi)) continue;
+        const c=queue[qi];
+        const bw=c.sku.l,bd=c.sku.w;
+
+        const pos=bestPlacement(freeRects,bw,bd);
+        if(!pos) continue; // doesn't fit anywhere on this layer
+
+        // Place it
+        placed.push({sku:c.sku,color:c.color,caseNum:c.caseNum,x:pos.x,y:pos.y,w:pos.w,d:pos.d});
+        usedThisLayer.add(qi);
+        freeRects=splitFreeRects(freeRects,pos.x,pos.y,pos.w,pos.d);
+        freeRects=pruneFreeRects(freeRects);
+        progress=true;
+        break; // restart scan from beginning with updated free rects
+      }
+    }
+
+    if(placed.length===0){
+      // Force-place the first remaining box to avoid infinite loop
+      const qi=remaining[0];
+      const c=queue[qi];
+      const bw=Math.min(c.sku.l,PALLET_W),bd=Math.min(c.sku.w,PALLET_D);
+      placed.push({sku:c.sku,color:c.color,caseNum:c.caseNum,x:0,y:0,w:bw,d:bd});
+      usedThisLayer.add(qi);
+    }
+
+    // Remove placed items from remaining
+    remaining=remaining.filter(qi=>!usedThisLayer.has(qi));
+
+    const layerH=Math.max(...placed.map(p=>p.sku.h));
+    const layerWt=placed.reduce((s,p)=>s+p.sku.wt,0);
+    const breakdown={};
+    placed.forEach(p=>{breakdown[p.sku.name]=(breakdown[p.sku.name]||0)+1;});
+    const usedArea=placed.reduce((s,p)=>s+p.w*p.d,0);
+    const utilPct=Math.round(usedArea/(PALLET_W*PALLET_D)*100);
+
+    layers.push({placed,layerH,layerWt,breakdown,skuColorMap,utilPct});
+  }
+  return layers;
+}
+
+// ── Prep Order tab ──
+function renderSequence(){
+  const el=document.getElementById('seq-output');
+  const active=skus.filter(s=>qtys[s.id]>0).map(s=>({...s,cases:qtys[s.id]}));
+  if(!active.length){el.innerHTML='<div class="empty-state">Load quantities first</div>';return;}
+  const sorted=[...active].sort((a,b)=>b.wt-a.wt);
+  const totalWt=sorted.reduce((s,x)=>s+x.wt*x.cases,0);
+  const totalCases=sorted.reduce((s,x)=>s+x.cases,0);
+  const totalUnits=sorted.reduce((s,x)=>s+x.upc*x.cases,0);
+  const effMins=s=>s.timedAvg!=null?s.timedAvg:(s.minsPerCase||0);
+  const totalMins=sorted.reduce((s,x)=>s+effMins(x)*x.cases,0);
+  const untimedSkus=sorted.filter(x=>x.timedAvg==null&&!(x.minsPerCase));
+  const pallets=buildPallets(sorted);
+  const fmtTime=m=>{ if(!m) return '—'; const h=Math.floor(m/60),min=Math.round(m%60); return h>0?h+'h '+min+'m':min+'m'; };
+  const zN=(i,n)=>{const p=i/n;return p<.34?'':p<.67?'mid':'top';};
+  const zL=(i,n)=>{const p=i/n;return p<.34?'bottom':p<.67?'middle':'top-layer';};
+  el.innerHTML=`<div class="summary"><div class="sum-stat"><div class="sum-val">${sorted.length}</div><div class="sum-lbl">Active SKUs</div></div><div class="sum-stat"><div class="sum-val">${totalCases}</div><div class="sum-lbl">Total Cases</div></div><div class="sum-stat"><div class="sum-val">${totalUnits}</div><div class="sum-lbl">Total Units</div></div><div class="sum-stat"><div class="sum-val">${totalWt.toFixed(0)} lb</div><div class="sum-lbl">Total Weight</div></div><div class="sum-stat"><div class="sum-val" style="color:${pallets.length>1?'var(--accent2)':'var(--accent)'}">${pallets.length}</div><div class="sum-lbl">Pallets Needed</div></div><div class="sum-stat"><div class="sum-val" style="color:var(--accent2)">${fmtTime(totalMins)}</div><div class="sum-lbl">Est. Prep Time</div></div></div>
+  <div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">Prep order — heaviest first</span></div><div class="zone-legend"><div class="zone-item"><span class="zone-dot" style="background:var(--accent)"></span>Bottom (heaviest)</div><div class="zone-item"><span class="zone-dot" style="background:var(--accent2)"></span>Middle</div><div class="zone-item"><span class="zone-dot" style="background:var(--label)"></span>Top (lightest)</div></div><div class="sequence-list">${sorted.map((s,i)=>`<div class="seq-item"><div class="seq-num ${zN(i,sorted.length)}">${i+1}</div><div class="seq-body"><div><div class="seq-name">${s.name}</div><div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px">${s.amzSku?s.amzSku+' · ':''}${s.l}×${s.w}×${s.h}" · ${s.upc}/case</div></div><div class="seq-detail"><div class="seq-stat"><div class="seq-stat-val">${s.cases}</div><div class="seq-stat-lbl">Cases</div></div><div class="seq-stat"><div class="seq-stat-val">${s.cases*s.upc}</div><div class="seq-stat-lbl">Units</div></div><div class="seq-stat"><div class="seq-stat-val">${(s.wt*s.cases).toFixed(0)} lb</div><div class="seq-stat-lbl">Total wt</div></div><div class="seq-stat"><div class="seq-stat-val">${s.wt} lb</div><div class="seq-stat-lbl">Per case</div></div><div class="seq-stat"><div class="seq-stat-val" style="color:${effMins(s)>0?'var(--accent2)':'var(--danger)'}">${effMins(s)>0?fmtTime(effMins(s)*s.cases):'⚠ not timed'}</div><div class="seq-stat-lbl">Prep time</div></div><div class="seq-stat"><div class="seq-stat-val" style="font-size:11px;color:var(--muted)">${s.timedAvg!=null?s.timedAvg.toFixed(2)+' min/case (timed)':s.minsPerCase?s.minsPerCase+' min/case (manual)':'⚠ time this SKU'}</div><div class="seq-stat-lbl">Rate</div></div><div class="seq-stat"><span class="seq-prep ${prepClass(s.prep)}">${prepLabel(s.prep)}</span></div></div></div></div>`).join('')}</div></div>
+  <div class="card"><div class="card-header"><span class="card-title">Pallet plan — ${pallets.length} pallet${pallets.length!==1?'s':''}</span></div>${pallets.map((pallet,pi)=>{const st=PALLET_STYLES[pi]||PALLET_STYLES[PALLET_STYLES.length-1];const wtPct=Math.min(100,(pallet.weightUsed/PALLET_MAX_WT)*100);const htPct=Math.min(100,(pallet.heightUsed/PALLET_MAX_H)*100);const tc=pallet.items.reduce((s,x)=>s+x.casesOnPallet,0);const ps=[...pallet.items].sort((a,b)=>b.sku.wt-a.sku.wt);return `<div class="pallet-block"><div class="pallet-header"><span class="pallet-badge" style="background:${st.bg};color:${st.fg}">PALLET ${pi+1}</span><span class="pallet-subtitle">${tc} cases · ${pallet.weightUsed.toFixed(0)} lb · ~${pallet.heightUsed.toFixed(0)}" tall</span></div><div class="pallet-bars"><div class="pbar"><div class="pbar-label">Weight</div><div class="pbar-track"><div class="pbar-fill" style="width:${wtPct}%;background:${wtPct>90?'var(--danger)':wtPct>75?'#f09040':st.bar}"></div></div><div class="pbar-val">${pallet.weightUsed.toFixed(0)} / 1,500 lb (${wtPct.toFixed(0)}%)</div></div><div class="pbar"><div class="pbar-label">Height</div><div class="pbar-track"><div class="pbar-fill" style="width:${htPct}%;background:${htPct>90?'var(--danger)':htPct>75?'#f09040':st.bar}"></div></div><div class="pbar-val">${pallet.heightUsed.toFixed(0)}" / 66" (${htPct.toFixed(0)}%)</div></div></div><div class="pallet-layers">${ps.map((item,li)=>{const bpl=Math.max(1,Math.floor((PALLET_W*PALLET_D)/(item.sku.l*item.sku.w)));const ln=Math.ceil(item.casesOnPallet/bpl);return `<div class="layer ${zL(li,ps.length)}"><div><div class="layer-label">${item.sku.name}</div><div class="layer-detail">${item.casesOnPallet} cases · ${ln} layer${ln!==1?'s':''} · ${item.sku.wt} lb/case</div></div><div class="layer-ht">+${(ln*item.sku.h).toFixed(0)}"</div></div>`;}).join('')}<div class="pallet-cap">▲ TOP</div><div class="pallet-cap">48×40" PALLET DECK</div></div></div>${pi<pallets.length-1?'<hr class="divider">':''}`;}).join('')}</div>`;
+}
+
+// ── Pallet Build tab ──
+function renderPalletBuild(){
+  const el=document.getElementById('build-output');
+  const active=skus.filter(s=>qtys[s.id]>0).map(s=>({...s,cases:qtys[s.id]}));
+  if(!active.length){el.innerHTML='<div class="empty-state">Load quantities in the "This Week" tab first</div>';return;}
+  const sorted=[...active].sort((a,b)=>b.wt-a.wt);
+  currentPallets=buildPallets(sorted);
+  activePalletIdx=0; activeLayerIdx=0;
+
+  // Assign SKU colors globally
+  const allSkuIds=[...new Set(currentPallets.flatMap(p=>p.items.map(i=>i.sku.id)))];
+
+  el.innerHTML=`
+    <div class="pallet-select-row">
+      <label>Pallet:</label>
+      <select id="pallet-picker" onchange="activePalletIdx=parseInt(this.value);activeLayerIdx=0;refreshBuildView()">
+        ${currentPallets.map((p,i)=>`<option value="${i}">Pallet ${i+1} — ${p.items.reduce((s,x)=>s+x.casesOnPallet,0)} cases, ${p.weightUsed.toFixed(0)} lb</option>`).join('')}
+      </select>
+      <div class="view-toggle">
+        <button class="view-btn active" id="btn-view-3d" onclick="setView('3d')">3D View</button>
+        <button class="view-btn" id="btn-view-2d" onclick="setView('2d')">2D Layers</button>
+      </div>
+    </div>
+
+    <!-- 3D viewer -->
+    <div id="view-3d-wrap">
+      <div id="three-container">
+        <div class="three-hint">🖱 Drag to rotate · Scroll to zoom · Right-drag to pan</div>
+        <div class="three-legend" id="three-legend"></div>
+      </div>
+    </div>
+
+    <!-- 2D layer viewer -->
+    <div id="view-2d-wrap" style="display:none">
+      <div class="card">
+        <div class="layer-nav">
+          <button class="layer-nav-btn" id="btn-prev-layer" onclick="stepLayer(-1)">◀ Prev layer</button>
+          <span class="layer-counter" id="layer-counter">Layer 1</span>
+          <button class="layer-nav-btn" id="btn-next-layer" onclick="stepLayer(1)">Next layer ▶</button>
+        </div>
+        <div class="layer-stats" id="layer-stats"></div>
+        <div id="layer-canvas-wrap"><canvas id="layer-canvas"></canvas></div>
+        <div class="box-legend" id="box-legend"></div>
+      </div>
+    </div>
+  `;
+
+  refreshBuildView();
+}
+
+function setView(v){
+  activeView=v;
+  document.getElementById('view-3d-wrap').style.display=v==='3d'?'':'none';
+  document.getElementById('view-2d-wrap').style.display=v==='2d'?'':'none';
+  document.getElementById('btn-view-3d').classList.toggle('active',v==='3d');
+  document.getElementById('btn-view-2d').classList.toggle('active',v==='2d');
+  if(v==='3d') build3D();
+  if(v==='2d') render2DLayer();
+}
+
+function stepLayer(dir){
+  const pallet=currentPallets[activePalletIdx];
+  const layers=buildLayerPlan(pallet.items);
+  activeLayerIdx=Math.max(0,Math.min(layers.length-1,activeLayerIdx+dir));
+  render2DLayer();
+}
+
+function refreshBuildView(){
+  if(activeView==='3d') build3D();
+  else render2DLayer();
+}
+
+// ── 3D Three.js viewer ──
+function build3D(){
+  const container=document.getElementById('three-container');
+  if(!container) return;
+
+  // Dispose previous renderer
+  if(threeRenderer){threeRenderer.dispose();container.removeChild(threeRenderer.domElement);}
+
+  const W=container.clientWidth||700,H=container.clientHeight||480;
+  threeRenderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  threeRenderer.setSize(W,H);
+  threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  threeRenderer.shadowMap.enabled=true;
+  container.insertBefore(threeRenderer.domElement,container.firstChild);
+
+  threeScene=new THREE.Scene();
+  threeScene.background=new THREE.Color(0x0a0d14);
+
+  // Camera
+  threeCamera=new THREE.PerspectiveCamera(45,W/H,0.1,2000);
+  threeCamera.position.set(80,90,100);
+  threeCamera.lookAt(24,20,20);
+
+  // Lights
+  threeScene.add(new THREE.AmbientLight(0xffffff,0.6));
+  const dirLight=new THREE.DirectionalLight(0xffffff,0.8);
+  dirLight.position.set(60,100,60);
+  dirLight.castShadow=true;
+  threeScene.add(dirLight);
+  threeScene.add(new THREE.DirectionalLight(0x8899ff,0.3).position.set(-60,40,-40));
+
+  // Grid
+  const gridHelper=new THREE.GridHelper(120,24,0x1e2235,0x1e2235);
+  gridHelper.position.set(24,0,20);
+  threeScene.add(gridHelper);
+
+  const pallet=currentPallets[activePalletIdx];
+  const layers=buildLayerPlan(pallet.items);
+
+  // Assign colors
+  const skuColorMap=layers[0]?.skuColorMap||{};
+  const legendItems={};
+
+  // Draw pallet deck
+  const deckGeo=new THREE.BoxGeometry(PALLET_W,3,PALLET_D);
+  const deckMat=new THREE.MeshLambertMaterial({color:0x8B6914});
+  const deck=new THREE.Mesh(deckGeo,deckMat);
+  deck.position.set(PALLET_W/2,1.5,PALLET_D/2);
+  deck.castShadow=true; deck.receiveShadow=true;
+  threeScene.add(deck);
+
+  // Draw pallet boards (slats)
+  for(let i=0;i<5;i++){
+    const slat=new THREE.Mesh(new THREE.BoxGeometry(PALLET_W,1.2,3),new THREE.MeshLambertMaterial({color:0x6B4F10}));
+    slat.position.set(PALLET_W/2,3.1,i*(PALLET_D/4));
+    threeScene.add(slat);
+  }
+
+  // Draw boxes layer by layer
+  let currentZ=3; // start above pallet deck
+  layers.forEach((layer,li)=>{
+    layer.placed.forEach(box=>{
+      const color=box.color||'#888888';
+      const hexColor=parseInt(color.replace('#',''),16);
+      const geo=new THREE.BoxGeometry(box.w,box.sku.h,box.d);
+
+      // Face materials — slightly different shades for top/sides
+      const c=new THREE.Color(hexColor);
+      const top=new THREE.MeshLambertMaterial({color:c.clone().multiplyScalar(1.15)});
+      const side=new THREE.MeshLambertMaterial({color:c});
+      const dark=new THREE.MeshLambertMaterial({color:c.clone().multiplyScalar(0.75)});
+      const mats=[side,side,top,dark,side,dark]; // +x,-x,+y,-y,+z,-z
+
+      const mesh=new THREE.Mesh(geo,mats);
+      mesh.position.set(box.x+box.w/2, currentZ+box.sku.h/2, box.y+box.d/2);
+      mesh.castShadow=true; mesh.receiveShadow=true;
+      threeScene.add(mesh);
+
+      // Wire edges
+      const edges=new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({color:0x000000,opacity:0.25,transparent:true})
+      );
+      edges.position.copy(mesh.position);
+      threeScene.add(edges);
+
+      // Label sprite
+      if(!legendItems[box.sku.name]){legendItems[box.sku.name]={color,name:box.sku.name};}
+    });
+    currentZ+=layer.layerH;
+  });
+
+  // Legend
+  const legendEl=document.getElementById('three-legend');
+  if(legendEl){
+    legendEl.innerHTML=Object.values(legendItems).map(item=>`<div class="legend-item"><div class="legend-swatch" style="background:${item.color}"></div>${item.name.length>18?item.name.slice(0,18)+'…':item.name}</div>`).join('');
+  }
+
+  // Simple orbit controls (manual implementation since OrbitControls not available on CDN r128 without extras)
+  let isDragging=false,isRightDrag=false;
+  let lastX=0,lastY=0;
+  let theta=Math.PI/4,phi=Math.PI/3,radius=160;
+  let panX=24,panY=20,panZ=20;
+
+  function updateCamera(){
+    threeCamera.position.set(
+      panX+radius*Math.sin(phi)*Math.sin(theta),
+      panY+radius*Math.cos(phi),
+      panZ+radius*Math.sin(phi)*Math.cos(theta)
+    );
+    threeCamera.lookAt(panX,panY,panZ);
+  }
+  updateCamera();
+
+  const cvs=threeRenderer.domElement;
+  cvs.addEventListener('mousedown',e=>{isDragging=true;isRightDrag=e.button===2;lastX=e.clientX;lastY=e.clientY;});
+  cvs.addEventListener('contextmenu',e=>e.preventDefault());
+  window.addEventListener('mouseup',()=>isDragging=false);
+  window.addEventListener('mousemove',e=>{
+    if(!isDragging) return;
+    const dx=e.clientX-lastX,dy=e.clientY-lastY;
+    lastX=e.clientX;lastY=e.clientY;
+    if(isRightDrag){
+      panX-=dx*0.15;panZ-=dy*0.15;
+    } else {
+      theta-=dx*0.008;
+      phi=Math.max(0.1,Math.min(Math.PI/2-0.05,phi+dy*0.008));
+    }
+    updateCamera();threeRenderer.render(threeScene,threeCamera);
+  });
+  cvs.addEventListener('wheel',e=>{
+    e.preventDefault();
+    radius=Math.max(40,Math.min(300,radius+e.deltaY*0.3));
+    updateCamera();threeRenderer.render(threeScene,threeCamera);
+  },{passive:false});
+
+  // Touch support
+  let lastTouchDist=0;
+  cvs.addEventListener('touchstart',e=>{
+    if(e.touches.length===1){isDragging=true;lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;}
+    if(e.touches.length===2){lastTouchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}
+  });
+  cvs.addEventListener('touchmove',e=>{
+    e.preventDefault();
+    if(e.touches.length===1&&isDragging){
+      const dx=e.touches[0].clientX-lastX,dy=e.touches[0].clientY-lastY;
+      lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;
+      theta-=dx*0.008;phi=Math.max(0.1,Math.min(Math.PI/2-0.05,phi+dy*0.008));
+      updateCamera();threeRenderer.render(threeScene,threeCamera);
+    }
+    if(e.touches.length===2){
+      const dist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+      radius=Math.max(40,Math.min(300,radius-(dist-lastTouchDist)*0.5));
+      lastTouchDist=dist;updateCamera();threeRenderer.render(threeScene,threeCamera);
+    }
+  },{passive:false});
+  cvs.addEventListener('touchend',()=>isDragging=false);
+
+  threeRenderer.render(threeScene,threeCamera);
+}
+
+// ── 2D Layer view ──
+function render2DLayer(){
+  const pallet=currentPallets[activePalletIdx];
+  const layers=buildLayerPlan(pallet.items);
+  if(!layers.length) return;
+  activeLayerIdx=Math.max(0,Math.min(layers.length-1,activeLayerIdx));
+  const layer=layers[activeLayerIdx];
+
+  // Nav buttons
+  document.getElementById('btn-prev-layer').disabled=activeLayerIdx===0;
+  document.getElementById('btn-next-layer').disabled=activeLayerIdx===layers.length-1;
+  document.getElementById('layer-counter').textContent=`Layer ${activeLayerIdx+1} of ${layers.length}`;
+
+  // Stats
+  const cumWt=layers.slice(0,activeLayerIdx+1).reduce((s,l)=>s+l.layerWt,0);
+  const cumH=layers.slice(0,activeLayerIdx+1).reduce((s,l)=>s+l.layerH,0);
+  document.getElementById('layer-stats').innerHTML=`
+    <div class="lstat"><div class="lstat-val" style="color:var(--accent)">${layer.placed.length}</div><div class="lstat-lbl">Cases this layer</div></div>
+    <div class="lstat"><div class="lstat-val">${layer.layerH}"</div><div class="lstat-lbl">Layer height</div></div>
+    <div class="lstat"><div class="lstat-val">${layer.layerWt.toFixed(0)} lb</div><div class="lstat-lbl">Layer weight</div></div>
+    <div class="lstat"><div class="lstat-val">${cumH.toFixed(0)}"</div><div class="lstat-lbl">Cumulative height</div></div>
+    <div class="lstat"><div class="lstat-val">${cumWt.toFixed(0)} lb</div><div class="lstat-lbl">Cumulative weight</div></div>
+    <div class="lstat"><div class="lstat-val" style="color:${cumWt/PALLET_MAX_WT>.9?'var(--danger)':cumWt/PALLET_MAX_WT>.75?'#f09040':'var(--accent2)'}">${(cumWt/PALLET_MAX_WT*100).toFixed(0)}%</div><div class="lstat-lbl">Weight capacity</div></div>
+    <div class="lstat"><div class="lstat-val" style="color:var(--accent)">${layer.utilPct||0}%</div><div class="lstat-lbl">Floor utilization</div></div>
+  `;
+
+  // Draw canvas — scale to fit container
+  const canvas=document.getElementById('layer-canvas');
+  const wrap=document.getElementById('layer-canvas-wrap');
+  const SCALE=Math.floor((wrap.clientWidth||600)/PALLET_W);
+  const CW=PALLET_W*SCALE,CD=PALLET_D*SCALE;
+  canvas.width=CW;canvas.height=CD;
+  const ctx=canvas.getContext('2d');
+
+  // Background (pallet footprint)
+  ctx.fillStyle='#141720';ctx.fillRect(0,0,CW,CD);
+
+  // Grid lines (every 6 inches = half foot)
+  ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;
+  for(let x=0;x<=PALLET_W;x+=6){ctx.beginPath();ctx.moveTo(x*SCALE,0);ctx.lineTo(x*SCALE,CD);ctx.stroke();}
+  for(let y=0;y<=PALLET_D;y+=6){ctx.beginPath();ctx.moveTo(0,y*SCALE);ctx.lineTo(CW,y*SCALE);ctx.stroke();}
+
+  // Pallet border
+  ctx.strokeStyle='rgba(148,153,187,0.4)';ctx.lineWidth=2;ctx.strokeRect(1,1,CW-2,CD-2);
+
+  // Draw boxes
+  layer.placed.forEach(box=>{
+    const bx=box.x*SCALE,by=box.y*SCALE,bw=box.w*SCALE,bd=box.d*SCALE;
+    // Fill
+    ctx.fillStyle=box.color+'cc';
+    ctx.fillRect(bx+1,by+1,bw-2,bd-2);
+    // Top highlight
+    ctx.fillStyle='rgba(255,255,255,0.12)';
+    ctx.fillRect(bx+1,by+1,bw-2,Math.min(6,bd/3));
+    // Border
+    ctx.strokeStyle=box.color;ctx.lineWidth=1.5;
+    ctx.strokeRect(bx+1,by+1,bw-2,bd-2);
+    // Label
+    const label=box.sku.name.length>12?box.sku.name.slice(0,12)+'…':box.sku.name;
+    const dim=`${box.w}"×${box.d}"`;
+    ctx.fillStyle='rgba(0,0,0,0.6)';
+    const fs=Math.max(9,Math.min(13,bw/8));
+    ctx.font=`600 ${fs}px 'IBM Plex Mono',monospace`;
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    if(bd>fs*2.5&&bw>40){
+      ctx.fillText(label,bx+bw/2,by+bd/2-fs*0.7);
+      ctx.font=`${Math.max(8,fs-2)}px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle='rgba(0,0,0,0.45)';
+      ctx.fillText(dim,bx+bw/2,by+bd/2+fs*0.7);
+    } else if(bw>30&&bd>fs){
+      ctx.fillText(label,bx+bw/2,by+bd/2);
+    }
+  });
+
+  // Dimensions ruler
+  ctx.fillStyle='rgba(148,153,187,0.5)';ctx.font='10px IBM Plex Mono,monospace';ctx.textAlign='center';ctx.textBaseline='top';
+  ctx.fillText('48"',CW/2,-0);
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  ctx.save();ctx.translate(CW+2,CD/2);ctx.rotate(Math.PI/2);ctx.fillText('40"',0,0);ctx.restore();
+
+  // SKU legend
+  const legendItems={};
+  layer.placed.forEach(p=>{if(!legendItems[p.sku.name]) legendItems[p.sku.name]=p.color;});
+  document.getElementById('box-legend').innerHTML=Object.entries(legendItems).map(([name,color])=>`<div class="box-legend-item"><div class="box-legend-swatch" style="background:${color}"></div>${name}</div>`).join('');
+}
+
+// ── Export ──
+function exportCSV(){
+  const active=skus.filter(s=>qtys[s.id]>0).sort((a,b)=>b.wt-a.wt);
+  if(!active.length){alert('No quantities set.');return;}
+  const rows=[['Prep Order','Amazon SKU','Display Name','Cases','Units','Case Weight (lb)','Total Weight (lb)','Dimensions LxWxH (in)','Prep Type','Mins/Case','Total Prep Mins']];
+  active.forEach((s,i)=>rows.push([i+1,s.amzSku||'',s.name,qtys[s.id],qtys[s.id]*s.upc,s.wt,(s.wt*qtys[s.id]).toFixed(1),`${s.l}x${s.w}x${s.h}`,s.prep,s.minsPerCase||0,((s.minsPerCase||0)*qtys[s.id]).toFixed(1)]));
+  const csv=rows.map(r=>r.map(c=>`"${c}"`).join(',')).join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='fba-prep-order.csv';a.click();
+}
+
+// ── Init ──
+// Pre-load SKU data from Myers Distribution catalog if library is empty
+const SEED_SKUS = [{"id": 8570, "amzSku": "1027173931", "name": "Dutch Country - Soft Pretzel Mix, 1.5 Lb. Bag (Single)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 1, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 9570, "amzSku": "1047794421", "name": "Grabill Country Meats - Beef Chunks, 25 Oz. (Pack of 3)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 1, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 10570, "amzSku": "1059838287", "name": "Dutch Jel Bulk Fruit Pectin, 10 Pound - 3 in 1 Label", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 1, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 11570, "amzSku": "B08KTWPWHR", "name": "Nutty & Fruity - Dried Cantaloupe - (7 oz)", "l": 12.0, "w": 6.5, "h": 7.0, "wt": 4.0, "upc": 7, "prep": "label", "minsPerCase": 1.0, "timedRuns": [], "timedAvg": 1.0, "hasTiming": true}, {"id": 12570, "amzSku": "UP-X6OJ-V0LP", "name": "JuJu Bears Cinnamon Bears - Bulk 5 LB Bag", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 6, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 13570, "amzSku": "1065255164", "name": "Nutty & Fruity - Dried Eatable Hibiscus Flower - Healthy Sna", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 7, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 14570, "amzSku": "1054983753", "name": "D-Lead - Hand Soap, 8 oz, 4222ES-8", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 15570, "amzSku": "1054983958", "name": "D-Lead - D-Wipe Disposable Towels 150 ct, WT-150", "l": 20.5, "w": 10.5, "h": 7.5, "wt": 18.4, "upc": 8, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 16570, "amzSku": "1054984006", "name": "D-Lead - D-Wipe Disposable Towels 40 ct, WT-040", "l": 14.0, "w": 10.5, "h": 8.75, "wt": 9.0, "upc": 12, "prep": "label", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 17570, "amzSku": "1054984152", "name": "D-Lead - Body Wash & Shampoo, 1 Gallon, 4224ES-4", "l": 12.75, "w": 12.75, "h": 12.5, "wt": 37.2, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 18570, "amzSku": "B00BQLI6HQ", "name": "D-Lead - Hand Soap, 1 Gallon, 4222ES-4", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 19570, "amzSku": "B07K8Z2PL4", "name": "D-Lead - D-Wipe Disposable Towels 325 ct, WT-325", "l": 18.0, "w": 9.75, "h": 8.5, "wt": 10.4, "upc": 2, "prep": "label", "minsPerCase": 0.5, "timedRuns": [], "timedAvg": 0.5, "hasTiming": true}, {"id": 20570, "amzSku": "1068453328", "name": "D-Lead - Surface Cleaner Concentrate, 32 oz, 330PD-12", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 12, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 21570, "amzSku": "1068453186", "name": "D-Lead - Surface Cleaner Concentrate,1 Gallon, 330PD-4", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 22570, "amzSku": "1068453213", "name": "D-Lead - Whole Body Wash & Shampoo, 8 oz, 4224ES-8", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 23570, "amzSku": "1068453230", "name": "D-Lead - Hand & Body Soap, Dye & Fragrance-Free, 1 Gallon, 4", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 24570, "amzSku": "1068453242", "name": "D-Lead - Hand Soap, 32 oz, 4222ES-12", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 12, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 25570, "amzSku": "1068453259", "name": "D-Lead - Abrasive Hand Soap, 16oz, 4229ES-16", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 26570, "amzSku": "1069180446", "name": "D-Lead - Abrasive Hand Soap 8oz, 4229ES-8", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 27570, "amzSku": "1069188341", "name": "D-Lead - D-Wipe Towels, Dispenser with 100 Individual Towels", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 10, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 28570, "amzSku": "4V-EJIZ-NAR1", "name": "D-Lead - Extra Strength Laundry Detergent Unscented 32 oz, 3", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 12, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 29570, "amzSku": "6Q-0YNH-HW2N", "name": "D-Lead - Abrasive Hand Soap, 1 Gallon, 4229ES-4", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 30570, "amzSku": "F6-6EO5-IHHH", "name": "D-Lead - Extra Strength Laundry Detergent, 1 Gallon, 3236ES-", "l": 12.75, "w": 12.75, "h": 12.75, "wt": 36.6, "upc": 4, "prep": "label", "minsPerCase": 1.0, "timedRuns": [], "timedAvg": 1.0, "hasTiming": true}, {"id": 31570, "amzSku": "ZW-63C9-R9PK", "name": "D-Lead - Final Clean Decontamination Concentrate, 1 Gallon, ", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 32570, "amzSku": "HF-SD9A-XP2T", "name": "D-Lead - Surface Wipes, 48 ct, PD-T048", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 8, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 33570, "amzSku": "1063902892", "name": "Safariland - Cantable Belt Loop, 6070CUBL-2-2", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 1, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 34570, "amzSku": "1034266002", "name": "Double Yolk - High Fiber Gluten Free Egg Noodles, (2 Pack)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 3, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 35570, "amzSku": "1034266021", "name": "Double Yolk - Medium Egg Noodles Gluten Free, (2 Pack)", "l": 16.0, "w": 9.0, "h": 7.5, "wt": 4.6, "upc": 3, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 36570, "amzSku": "YG-YC2B-NMG3", "name": "Double Yolk - Medium Egg Noodle Gluten Free, (Single)", "l": 16.0, "w": 9.0, "h": 7.5, "wt": 4.6, "upc": 6, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 37570, "amzSku": "H8-O07J-8KSP", "name": "Backroad Country - Popcorn Butter Salt, (Single)", "l": 8.75, "w": 7.0, "h": 5.5, "wt": 5.2, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 38570, "amzSku": "4E-HKVO-QITN", "name": "Backroad Country - Red Licorice Twists, (Single)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 39570, "amzSku": "1051857956", "name": "Amish Wedding - Pickled Baby Beets, (2 Pack)", "l": 9.0, "w": 7.0, "h": 5.0, "wt": 0, "upc": 6, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 40570, "amzSku": "1051858642", "name": "Amish Wedding - Sugarless Apple Butter, (2 Pack)", "l": 8.0, "w": 6.0, "h": 4.0, "wt": 0, "upc": 6, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 41570, "amzSku": "TK-RET3-3A31", "name": "Backroad Country - Pork Hocks, (Single)", "l": 12.5, "w": 9.5, "h": 5.5, "wt": 15.0, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 42570, "amzSku": "1052299381", "name": "Backroad Country - Polish Sausage, (Single)", "l": 12.5, "w": 9.5, "h": 5.5, "wt": 15.0, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 43570, "amzSku": "5J-MW36-6ZIZ", "name": "Backroad Country - Green Apple Licorice Twists, (Single)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 44570, "amzSku": "3P-R8UL-CVGD", "name": "Backroad Country - Black Licorice Twists 16 oz (Single)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 45570, "amzSku": "1058395260", "name": "Backroad Country - Blue Raspberry Licorice (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 46570, "amzSku": "1063190447", "name": "Gluten Free Noodles Amish Wedding Foods Double Yolk Medium E", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 3, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 47570, "amzSku": "1063909981", "name": "Backroad Country - Pickled Cured Pork Hocks 12oz (Pack of 2)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 6, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 48570, "amzSku": "1063910034", "name": "Backroad Country - Black Licorice Twists 16oz (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 49570, "amzSku": "1063911100", "name": "Duffys Crumpet 8ct", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 12, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 50570, "amzSku": "1066736118", "name": "Backroad Country - Watermelon Licorice Twists (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 51570, "amzSku": "1066736318", "name": "Backroad Country - Red Raspberry Licorice (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 52570, "amzSku": "1066736528", "name": "Backroad Country Red Hot Polish Sausage 8oz (Pack of 2)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 6, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 53570, "amzSku": "J5-EXR2-WGPL", "name": "Backroad Country Red Hot Pickled Polish Sausage 8 Ounces", "l": 12.5, "w": 9.5, "h": 5.5, "wt": 15.0, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 54570, "amzSku": "Z0-2MXP-GOET", "name": "Farmhouse Preserve Gluten Free Medium Double Egg Yolk Noodle", "l": 16.0, "w": 9.0, "h": 7.5, "wt": 4.6, "upc": 6, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 55570, "amzSku": "110537-2", "name": "Farmhouse Preserve Gluten Free Medium Double Egg Yolk Noodle", "l": 16.0, "w": 9.0, "h": 7.5, "wt": 4.6, "upc": 3, "prep": "label", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 56570, "amzSku": "IB-8E5E-K0PG", "name": "Amish Wedding - Peanut Butter Spread, 9 oz Jar", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 57570, "amzSku": "JS-RXFW-ZWHM", "name": "Backroad Country Smoked Pickled Bologna, Packed in Vinegar B", "l": 12.5, "w": 9.5, "h": 5.5, "wt": 15.0, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 58570, "amzSku": "2I-M8DZ-U60F", "name": "Backroad Country - Green Apple Licorice Twists, (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 59570, "amzSku": "62-5420-OYBV", "name": "Backroad Country - Red Licorice Twists, (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 60570, "amzSku": "KA-9PWG-TCCR", "name": "Backroad Country - Blue Raspberry Licorice (Single)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 61570, "amzSku": "FB24CS-CH", "name": "Ohh FFFFUDGE!! A Christmas Story Creamy Chocolate Fudge", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 62570, "amzSku": "FB24CS-CW", "name": "Ohh FFFFUDGE!! A Christmas Story Chocolate Walnut Fudge", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 63570, "amzSku": "1027803071", "name": "Gumi-Aid - Fruit Flavored Gummy Bandages 3 oz (2 Pack)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 64570, "amzSku": "1043631047", "name": "Scottie Dogs Strawberry Licorice 6 oz - (2 Pack)", "l": 12.0, "w": 7.75, "h": 5.0, "wt": 6.0, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 65570, "amzSku": "1043631106", "name": "Scottie Dogs Black Licorice 6 oz, (2 Pack)", "l": 12.0, "w": 7.75, "h": 5.0, "wt": 6.0, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 66570, "amzSku": "1043680780", "name": "Candy Buttons - Mega Buttons, (Single)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 67570, "amzSku": "1069226816", "name": "Scottie Dogs Black Licorice 6 oz", "l": 12.0, "w": 7.75, "h": 5.0, "wt": 6.0, "upc": 12, "prep": "label", "minsPerCase": 1.0, "timedRuns": [], "timedAvg": 1.0, "hasTiming": true}, {"id": 68570, "amzSku": "DE-SWRR-V8GQ", "name": "Jelly Belly Cherry Lovers Heart-Shaped Jelly Beans, 6 Flavor", "l": 12.0, "w": 7.75, "h": 5.0, "wt": 6.0, "upc": 12, "prep": "label", "minsPerCase": 1.0, "timedRuns": [], "timedAvg": 1.0, "hasTiming": true}, {"id": 69570, "amzSku": "MD-OIYU-MOB3", "name": "Jelly Belly Cinnamon Lovers Heart-Shaped Jelly Beans, 7 oz", "l": 12.0, "w": 7.75, "h": 5.0, "wt": 6.0, "upc": 12, "prep": "label", "minsPerCase": 1.0, "timedRuns": [], "timedAvg": 1.0, "hasTiming": true}, {"id": 70570, "amzSku": "SNLGLKSPRGCUP", "name": "Glock - Spring Cups, SP00070", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 1, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}];
+if(!skus.length) {
+  skus = SEED_SKUS;
+  save();
+}
+renderSKUs();renderFolderUI();
+if(folderMeta) showFeedback('shipment-feedback','↻ Folder connected — click <strong>Reload latest file</strong> to load this week\'s shipment.','warn',true);
+
+// ── Timer state ──
+let timerSkuId=null,timerInterval=null,timerStart_ms=0,timerElapsed=0,timerRunning=false,timerPaused=false;
+
+function openTimer(id){
+  timerSkuId=id;
+  const s=skus.find(x=>x.id===id);
+  if(!s) return;
+  document.getElementById('timer-sku-name').textContent=s.name;
+  timerElapsed=0;timerRunning=false;timerPaused=false;
+  clearInterval(timerInterval);
+  document.getElementById('timer-display').textContent='0:00.0';
+  document.getElementById('timer-display').className='timer-display';
+  showTimerBtns('idle');
+  renderTimerRuns(s);
+  document.getElementById('timer-modal').style.display='flex';
+}
+
+function closeTimer(){
+  clearInterval(timerInterval);timerRunning=false;
+  document.getElementById('timer-modal').style.display='none';
+  renderSKUs(); // refresh badges
+}
+
+function showTimerBtns(state){
+  document.getElementById('btn-timer-start').style.display=state==='idle'?'':'none';
+  document.getElementById('btn-timer-pause').style.display=state==='running'?'':'none';
+  document.getElementById('btn-timer-resume').style.display=state==='paused'?'':'none';
+  document.getElementById('btn-timer-stop').style.display=state!=='idle'?'':'none';
+}
+
+function timerStart(){
+  timerElapsed=0;timerStart_ms=Date.now();timerRunning=true;timerPaused=false;
+  document.getElementById('timer-display').className='timer-display running';
+  showTimerBtns('running');
+  timerInterval=setInterval(timerTick,100);
+}
+
+function timerPause(){
+  clearInterval(timerInterval);
+  timerElapsed+=Date.now()-timerStart_ms;
+  timerPaused=true;timerRunning=false;
+  document.getElementById('timer-display').className='timer-display paused';
+  showTimerBtns('paused');
+}
+
+function timerResume(){
+  timerStart_ms=Date.now();timerRunning=true;timerPaused=false;
+  document.getElementById('timer-display').className='timer-display running';
+  showTimerBtns('running');
+  timerInterval=setInterval(timerTick,100);
+}
+
+function timerStop(){
+  clearInterval(timerInterval);
+  const total=timerElapsed+(timerRunning?Date.now()-timerStart_ms:0);
+  timerRunning=false;timerPaused=false;
+  const mins=total/60000;
+  const s=skus.find(x=>x.id===timerSkuId);
+  if(!s) return;
+  if(!s.timedRuns) s.timedRuns=[];
+  s.timedRuns.push({ms:total,mins:parseFloat(mins.toFixed(4)),ts:new Date().toLocaleTimeString()});
+  // Recalculate average
+  s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
+  s.hasTiming=true;
+  save();
+  renderTimerRuns(s);
+  // Reset for next case
+  timerElapsed=0;timerRunning=false;
+  document.getElementById('timer-display').textContent='0:00.0';
+  document.getElementById('timer-display').className='timer-display';
+  showTimerBtns('idle');
+}
+
+function timerTick(){
+  const total=timerElapsed+(Date.now()-timerStart_ms);
+  const m=Math.floor(total/60000),s=Math.floor((total%60000)/1000),t=Math.floor((total%1000)/100);
+  document.getElementById('timer-display').textContent=`${m}:${String(s).padStart(2,'0')}.${t}`;
+}
+
+function fmtMs(ms){
+  const m=Math.floor(ms/60000),s=Math.floor((ms%60000)/1000),t=Math.floor((ms%1000)/100);
+  return `${m}:${String(s).padStart(2,'0')}.${t}`;
+}
+
+function discardRun(skuId,runIdx){
+  const s=skus.find(x=>x.id===skuId);
+  if(!s||!s.timedRuns) return;
+  s.timedRuns.splice(runIdx,1);
+  if(s.timedRuns.length>0){
+    s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
+  } else {
+    s.timedAvg=null; s.hasTiming=false;
+  }
+  save();renderTimerRuns(s);
+}
+
+function renderTimerRuns(s){
+  const runsEl=document.getElementById('timer-runs');
+  const avgEl=document.getElementById('timer-avg');
+  if(!s.timedRuns||!s.timedRuns.length){
+    runsEl.innerHTML='<div style="text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px;padding:12px">No runs yet — hit Start to begin timing</div>';
+    avgEl.style.display='none'; return;
+  }
+  runsEl.innerHTML=s.timedRuns.map((r,i)=>`
+    <div class="timer-run-row">
+      <span style="color:var(--muted)">#${i+1}</span>
+      <span>${fmtMs(r.ms)}</span>
+      <span style="color:var(--muted)">${r.mins.toFixed(2)} min</span>
+      <span style="color:var(--muted);font-size:10px">${r.ts}</span>
+      <button onclick="discardRun(${s.id},${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 4px" title="Discard this run">✕</button>
+    </div>`).join('');
+  avgEl.style.display='';
+  avgEl.textContent=`Average: ${s.timedAvg.toFixed(2)} min/case over ${s.timedRuns.length} run${s.timedRuns.length!==1?'s':''}`;
+}
+
+// ── Shift time settings (stored in localStorage) ──
+let shiftSettings=JSON.parse(localStorage.getItem('fba_shift')||'{"setupMins":45,"bufferPct":20}');
+function saveShift(){localStorage.setItem('fba_shift',JSON.stringify(shiftSettings));}
+
+// ── Inject shift estimator into Prep Order tab ──
+// Called from within renderSequence after the summary bar
+function renderShiftEstimator(el, sorted, totalMins, untimedSkus){
+  const setupMins=shiftSettings.setupMins||0;
+  const bufferPct=shiftSettings.bufferPct||0;
+  const subtotal=totalMins+setupMins;
+  const bufferMins=subtotal*(bufferPct/100);
+  const grandTotal=subtotal+bufferMins;
+
+  const warnHtml=untimedSkus.length?
+    `<div class="untimed-warn">⚠ ${untimedSkus.length} SKU${untimedSkus.length!==1?'s':''} have no timing data: ${untimedSkus.map(s=>s.name.split(' ').slice(0,3).join(' ')).join(', ')} — estimate excludes these cases. Go to SKU Library → ⏱ Time to log runs.</div>`:'';
+
+  return `
+  <div class="shift-card">
+    <div class="card-header" style="margin-bottom:14px"><span class="card-title">Shift time estimate</span></div>
+    <div class="settings-row">
+      <div class="settings-field">
+        <label>Setup & breakdown (min)</label>
+        <input type="number" min="0" step="5" value="${setupMins}"
+          oninput="shiftSettings.setupMins=parseInt(this.value)||0;saveShift();refreshShiftEstimate()">
+      </div>
+      <div class="settings-field">
+        <label>PF&D buffer (%)</label>
+        <input type="number" min="0" max="100" step="5" value="${bufferPct}"
+          oninput="shiftSettings.bufferPct=parseInt(this.value)||0;saveShift();refreshShiftEstimate()">
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);align-self:flex-end;padding-bottom:8px">
+        Buffer covers: label printing, bathroom, breaks, interruptions
+      </div>
+    </div>
+    <div id="shift-breakdown">
+      <div class="shift-row"><span class="shift-label">Case prep work</span><span class="shift-val">${fmtTime(totalMins)}</span></div>
+      <div class="shift-row"><span class="shift-label">Setup & breakdown</span><span class="shift-val">${fmtTime(setupMins)}</span></div>
+      <div class="shift-row"><span class="shift-label">PF&D buffer (${bufferPct}%)</span><span class="shift-val">+ ${fmtTime(bufferMins)}</span></div>
+      <div class="shift-total">
+        <span class="shift-total-label">Estimated shift time</span>
+        <span class="shift-total-val">${fmtTime(grandTotal)}</span>
+      </div>
+    </div>
+    ${warnHtml}
+  </div>`;
+}
+
+function refreshShiftEstimate(){
+  // Re-render just the shift card without rebuilding the whole tab
+  const active=skus.filter(s=>qtys[s.id]>0).map(s=>({...s,cases:qtys[s.id]}));
+  if(!active.length) return;
+  const effMins=s=>s.timedAvg!=null?s.timedAvg:(s.minsPerCase||0);
+  const sorted=[...active].sort((a,b)=>b.wt-a.wt);
+  const totalMins=sorted.reduce((s,x)=>s+effMins(x)*x.cases,0);
+  const untimedSkus=sorted.filter(x=>x.timedAvg==null&&!(x.minsPerCase));
+  const shiftEl=document.getElementById('shift-estimator-wrap');
+  if(shiftEl) shiftEl.innerHTML=renderShiftEstimator(null,sorted,totalMins,untimedSkus);
+}
+
+</script>
+</body>
+</html>
