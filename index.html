@@ -848,7 +848,7 @@ function renderFolderUI(){
 function processXLSXBuffer(buf,filename){
   try{
     const wb=XLSX.read(buf,{type:'array'});
-    const preferred=['Create Draft Template','Sheet1','shipment','data'];
+    const preferred=['Create Draft Template','FBA Prep Sequencer - SKU Library','shipment','data'];
     let ws=null;
     for(const n of preferred){if(wb.SheetNames.includes(n)){ws=wb.Sheets[n];break;}}
     if(!ws) ws=wb.Sheets[wb.SheetNames[0]];
