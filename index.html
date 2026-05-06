@@ -1634,7 +1634,15 @@ async function syncFromSheet() {
     const csv = await res.text();
     const rows = parseSheetCSV(csv);
     if (!rows.length) throw new Error('No rows parsed');
-    skus = rows.map((r, i) => rowToSku(r, i));
+    // Deduplicate by amazon_sku, keep first occurrence, filter blank rows
+    const seen = new Set();
+    const deduped = rows.filter(r => {
+      const key = (r.amazon_sku || r.product_name || '').trim().toLowerCase();
+      if (!key || key === 'amazon_sku') return false; // skip blank or header echo rows
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+    skus = deduped.map((r, i) => rowToSku(r, i));
     save();
     renderSKUs();
     const now = new Date().toLocaleTimeString();
@@ -1886,8 +1894,11 @@ async function init() {
     if (!skus.length) {
       skus = SEED_SKUS;
       save();
+      console.log('Loaded from seed data —', skus.length, 'SKUs');
     }
     setSyncStatus('offline');
+  } else {
+    console.log('Loaded from sheet —', skus.length, 'SKUs');
   }
   renderSKUs();
   renderFolderUI();
