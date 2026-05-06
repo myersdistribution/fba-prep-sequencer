@@ -1659,10 +1659,10 @@ async function syncFromSheet() {
 async function syncSkuToSheet(sku) {
   if (!APPS_SCRIPT_URL) return; // write-back not configured yet
   try {
-    await fetch(APPS_SCRIPT_URL, {
+    const writeRes = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
-      mode: 'no-cors',
-      headers: {'Content-Type': 'application/json'},
+      mode: 'cors',
+      headers: {'Content-Type': 'text/plain'}, // text/plain avoids preflight CORS issues with Apps Script
       body: JSON.stringify({
         sheetId:       SHEET_ID,
         sheetName:     SHEET_NAME,
@@ -1676,8 +1676,11 @@ async function syncSkuToSheet(sku) {
         minsPerCase:   sku.minsPerCase || '',
       })
     });
+    const result = await writeRes.json().catch(()=>({}));
+    if(result.success) console.log('Sheet updated — row', result.row, '| SKU:', result.sku);
+    else console.warn('Sheet write failed:', result.error);
   } catch(e) {
-    console.warn('Write-back failed:', e);
+    console.warn('Write-back failed:', e.message);
   }
 }
 
