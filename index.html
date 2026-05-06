@@ -463,6 +463,7 @@ function timerStop(){
   s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
   s.hasTiming=true;
   save();
+  syncSkuToSheet(s);
   renderTimerRuns(s);
   // Reset for next case
   timerElapsed=0;timerRunning=false;
@@ -639,6 +640,7 @@ function timerStop(){
   s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
   s.hasTiming=true;
   save();
+  syncSkuToSheet(s);
   renderTimerRuns(s);
   // Reset for next case
   timerElapsed=0;timerRunning=false;
@@ -988,6 +990,7 @@ function editCell(skuId, field, currentVal, el, type='text'){
     }
     else { s[field]=val; }
     save(); renderSKUs();
+    const edited=skus.find(x=>x.id===skuId); if(edited) syncSkuToSheet(edited);
   };
   input.addEventListener('blur', commit);
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') commit(); if(e.key==='Escape'){ save(); renderSKUs(); } });
@@ -1543,8 +1546,146 @@ function exportCSV(){
   const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='fba-prep-order.csv';a.click();
 }
 
+// ── Google Sheets Sync ──
+const SHEET_ID = '1EiCOt1t1IxllhW9F9yrRQR4ZvtouNusx3Yu3Oky6_Gs';
+const SHEET_NAME = 'Sheet1';
+// Public CSV export URL — sheet must be shared as "Anyone with link can view"
+const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+// Apps Script Web App URL for writes — set after deploying Apps Script
+let APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz1ENdGDiICNij5_Tmi5cXqsPOQyj1-e10QO0KOmJ3sJO0tcGt45CPqR2npvX-EoRSXnQ/exec';
+
+let syncStatus = 'idle'; // 'idle' | 'syncing' | 'error' | 'ok'
+
+function setSyncStatus(s, msg) {
+  syncStatus = s;
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  const map = {
+    idle:    { color:'var(--muted)',   icon:'○', text:'Not synced' },
+    syncing: { color:'var(--label)',   icon:'↻', text:'Syncing…' },
+    ok:      { color:'var(--accent2)', icon:'●', text: msg || 'Synced' },
+    error:   { color:'var(--danger)',  icon:'⚠', text: msg || 'Sync error' },
+    offline: { color:'var(--accent)',  icon:'◌', text:'Offline — using local data' },
+  };
+  const s2 = map[s] || map.idle;
+  el.innerHTML = `<span style="color:${s2.color};font-family:var(--mono);font-size:11px">${s2.icon} ${s2.text}</span>`;
+}
+
+// Parse CSV text → array of objects using header row
+function parseSheetCSV(csv) {
+  const lines = csv.trim().split('\n');
+  if (lines.length < 2) return [];
+  // Google Sheets CSV uses quoted fields
+  function parseLine(line) {
+    const result = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+      else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
+      else cur += c;
+    }
+    result.push(cur); return result;
+  }
+  const headers = parseLine(lines[0]);
+  return lines.slice(1).map(line => {
+    const vals = parseLine(line);
+    const obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
+    return obj;
+  }).filter(r => r.amazon_sku || r.product_name);
+}
+
+// Convert a sheet row → app SKU object
+function rowToSku(row, idx) {
+  let timedRuns = [];
+  try { timedRuns = JSON.parse(row.timed_runs_json || '[]'); } catch(e) {}
+  const timedAvg = row.timed_avg_mins ? parseFloat(row.timed_avg_mins) : null;
+  const minsPerCase = timedAvg || null;
+  return {
+    id: Date.now() + idx + Math.random(),
+    amzSku:      row.amazon_sku   || '',
+    name:        row.product_name || row.amazon_sku || '',
+    l:           parseFloat(row.length)       || 0,
+    w:           parseFloat(row.width)        || 0,
+    h:           parseFloat(row.height)       || 0,
+    wt:          parseFloat(row.weight_lb)    || 0,
+    upc:         parseInt(row.units_per_case) || 1,
+    prep:        row.prep_type    || 'label',
+    minsPerCase: minsPerCase,
+    timedRuns:   timedRuns,
+    timedAvg:    timedAvg,
+    hasTiming:   timedAvg != null,
+    notes:       row.notes        || '',
+    _sheetRow:   idx + 2, // 1-indexed, +1 for header
+  };
+}
+
+// Load SKUs from Google Sheet (public CSV export)
+async function syncFromSheet() {
+  setSyncStatus('syncing');
+  try {
+    const res = await fetch(SHEET_CSV_URL + '&t=' + Date.now());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const csv = await res.text();
+    const rows = parseSheetCSV(csv);
+    if (!rows.length) throw new Error('No rows parsed');
+    skus = rows.map((r, i) => rowToSku(r, i));
+    save();
+    renderSKUs();
+    const now = new Date().toLocaleTimeString();
+    setSyncStatus('ok', `Synced ${skus.length} SKUs at ${now}`);
+    return true;
+  } catch(e) {
+    console.warn('Sheet sync failed:', e);
+    setSyncStatus('error', 'Could not reach sheet — using local data');
+    return false;
+  }
+}
+
+// Write a single SKU's timing data back to the sheet via Apps Script
+async function syncSkuToSheet(sku) {
+  if (!APPS_SCRIPT_URL) return; // write-back not configured yet
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        sheetId:       SHEET_ID,
+        sheetName:     SHEET_NAME,
+        amzSku:        sku.amzSku,
+        timedAvgMins:  sku.timedAvg  || '',
+        timedRunsJson: JSON.stringify(sku.timedRuns || []),
+        // Also write any edited fields
+        productName:   sku.name,
+        length:        sku.l,   width: sku.w, height: sku.h,
+        weightLb:      sku.wt,  unitsPer: sku.upc, prepType: sku.prep,
+        minsPerCase:   sku.minsPerCase || '',
+      })
+    });
+  } catch(e) {
+    console.warn('Write-back failed:', e);
+  }
+}
+
+// Add sync status indicator to header
+function injectSyncUI() {
+  const hdr = document.querySelector('.header-actions');
+  if (!hdr || document.getElementById('sync-status')) return;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:6px';
+  wrap.innerHTML = `
+    <div id="sync-status" style="font-family:var(--mono);font-size:11px;color:var(--muted)">○ Not synced</div>
+    <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="syncFromSheet()">↻ Sync from Sheet</button>
+  `;
+  hdr.appendChild(wrap);
+}
+
+// Override save() to also trigger a write-back for the last-modified SKU
+const _origSave = save;
+let _lastModifiedSku = null;
+
 // ── Init ──
-// Pre-load SKU data from Myers Distribution catalog if library is empty
 const SEED_SKUS = [{"id": 8570, "amzSku": "1027173931", "name": "Dutch Country - Soft Pretzel Mix, 1.5 Lb. Bag (Single)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 1, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 9570, "amzSku": "1047794421", "name": "Grabill Country Meats - Beef Chunks, 25 Oz. (Pack of 3)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 1, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 10570, "amzSku": "1059838287", "name": "Dutch Jel Bulk Fruit Pectin, 10 Pound - 3 in 1 Label", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 1, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 11570, "amzSku": "B08KTWPWHR", "name": "Nutty & Fruity - Dried Cantaloupe - (7 oz)", "l": 12.0, "w": 6.5, "h": 7.0, "wt": 4.0, "upc": 7, "prep": "label", "minsPerCase": 1.0, "timedRuns": [], "timedAvg": 1.0, "hasTiming": true}, {"id": 12570, "amzSku": "UP-X6OJ-V0LP", "name": "JuJu Bears Cinnamon Bears - Bulk 5 LB Bag", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 6, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 13570, "amzSku": "1065255164", "name": "Nutty & Fruity - Dried Eatable Hibiscus Flower - Healthy Sna", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 7, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 14570, "amzSku": "1054983753", "name": "D-Lead - Hand Soap, 8 oz, 4222ES-8", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 15570, "amzSku": "1054983958", "name": "D-Lead - D-Wipe Disposable Towels 150 ct, WT-150", "l": 20.5, "w": 10.5, "h": 7.5, "wt": 18.4, "upc": 8, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 16570, "amzSku": "1054984006", "name": "D-Lead - D-Wipe Disposable Towels 40 ct, WT-040", "l": 14.0, "w": 10.5, "h": 8.75, "wt": 9.0, "upc": 12, "prep": "label", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 17570, "amzSku": "1054984152", "name": "D-Lead - Body Wash & Shampoo, 1 Gallon, 4224ES-4", "l": 12.75, "w": 12.75, "h": 12.5, "wt": 37.2, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 18570, "amzSku": "B00BQLI6HQ", "name": "D-Lead - Hand Soap, 1 Gallon, 4222ES-4", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 19570, "amzSku": "B07K8Z2PL4", "name": "D-Lead - D-Wipe Disposable Towels 325 ct, WT-325", "l": 18.0, "w": 9.75, "h": 8.5, "wt": 10.4, "upc": 2, "prep": "label", "minsPerCase": 0.5, "timedRuns": [], "timedAvg": 0.5, "hasTiming": true}, {"id": 20570, "amzSku": "1068453328", "name": "D-Lead - Surface Cleaner Concentrate, 32 oz, 330PD-12", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 12, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 21570, "amzSku": "1068453186", "name": "D-Lead - Surface Cleaner Concentrate,1 Gallon, 330PD-4", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 22570, "amzSku": "1068453213", "name": "D-Lead - Whole Body Wash & Shampoo, 8 oz, 4224ES-8", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 23570, "amzSku": "1068453230", "name": "D-Lead - Hand & Body Soap, Dye & Fragrance-Free, 1 Gallon, 4", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 24570, "amzSku": "1068453242", "name": "D-Lead - Hand Soap, 32 oz, 4222ES-12", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 12, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 25570, "amzSku": "1068453259", "name": "D-Lead - Abrasive Hand Soap, 16oz, 4229ES-16", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 26570, "amzSku": "1069180446", "name": "D-Lead - Abrasive Hand Soap 8oz, 4229ES-8", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 27570, "amzSku": "1069188341", "name": "D-Lead - D-Wipe Towels, Dispenser with 100 Individual Towels", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 10, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 28570, "amzSku": "4V-EJIZ-NAR1", "name": "D-Lead - Extra Strength Laundry Detergent Unscented 32 oz, 3", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 12, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 29570, "amzSku": "6Q-0YNH-HW2N", "name": "D-Lead - Abrasive Hand Soap, 1 Gallon, 4229ES-4", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 30570, "amzSku": "F6-6EO5-IHHH", "name": "D-Lead - Extra Strength Laundry Detergent, 1 Gallon, 3236ES-", "l": 12.75, "w": 12.75, "h": 12.75, "wt": 36.6, "upc": 4, "prep": "label", "minsPerCase": 1.0, "timedRuns": [], "timedAvg": 1.0, "hasTiming": true}, {"id": 31570, "amzSku": "ZW-63C9-R9PK", "name": "D-Lead - Final Clean Decontamination Concentrate, 1 Gallon, ", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 32570, "amzSku": "HF-SD9A-XP2T", "name": "D-Lead - Surface Wipes, 48 ct, PD-T048", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 8, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 33570, "amzSku": "1063902892", "name": "Safariland - Cantable Belt Loop, 6070CUBL-2-2", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 1, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 34570, "amzSku": "1034266002", "name": "Double Yolk - High Fiber Gluten Free Egg Noodles, (2 Pack)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 3, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 35570, "amzSku": "1034266021", "name": "Double Yolk - Medium Egg Noodles Gluten Free, (2 Pack)", "l": 16.0, "w": 9.0, "h": 7.5, "wt": 4.6, "upc": 3, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 36570, "amzSku": "YG-YC2B-NMG3", "name": "Double Yolk - Medium Egg Noodle Gluten Free, (Single)", "l": 16.0, "w": 9.0, "h": 7.5, "wt": 4.6, "upc": 6, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 37570, "amzSku": "H8-O07J-8KSP", "name": "Backroad Country - Popcorn Butter Salt, (Single)", "l": 8.75, "w": 7.0, "h": 5.5, "wt": 5.2, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 38570, "amzSku": "4E-HKVO-QITN", "name": "Backroad Country - Red Licorice Twists, (Single)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 39570, "amzSku": "1051857956", "name": "Amish Wedding - Pickled Baby Beets, (2 Pack)", "l": 9.0, "w": 7.0, "h": 5.0, "wt": 0, "upc": 6, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 40570, "amzSku": "1051858642", "name": "Amish Wedding - Sugarless Apple Butter, (2 Pack)", "l": 8.0, "w": 6.0, "h": 4.0, "wt": 0, "upc": 6, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 41570, "amzSku": "TK-RET3-3A31", "name": "Backroad Country - Pork Hocks, (Single)", "l": 12.5, "w": 9.5, "h": 5.5, "wt": 15.0, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 42570, "amzSku": "1052299381", "name": "Backroad Country - Polish Sausage, (Single)", "l": 12.5, "w": 9.5, "h": 5.5, "wt": 15.0, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 43570, "amzSku": "5J-MW36-6ZIZ", "name": "Backroad Country - Green Apple Licorice Twists, (Single)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 44570, "amzSku": "3P-R8UL-CVGD", "name": "Backroad Country - Black Licorice Twists 16 oz (Single)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 45570, "amzSku": "1058395260", "name": "Backroad Country - Blue Raspberry Licorice (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 46570, "amzSku": "1063190447", "name": "Gluten Free Noodles Amish Wedding Foods Double Yolk Medium E", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 3, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 47570, "amzSku": "1063909981", "name": "Backroad Country - Pickled Cured Pork Hocks 12oz (Pack of 2)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 6, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 48570, "amzSku": "1063910034", "name": "Backroad Country - Black Licorice Twists 16oz (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 49570, "amzSku": "1063911100", "name": "Duffys Crumpet 8ct", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 12, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 50570, "amzSku": "1066736118", "name": "Backroad Country - Watermelon Licorice Twists (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 51570, "amzSku": "1066736318", "name": "Backroad Country - Red Raspberry Licorice (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 52570, "amzSku": "1066736528", "name": "Backroad Country Red Hot Polish Sausage 8oz (Pack of 2)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 6, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 53570, "amzSku": "J5-EXR2-WGPL", "name": "Backroad Country Red Hot Pickled Polish Sausage 8 Ounces", "l": 12.5, "w": 9.5, "h": 5.5, "wt": 15.0, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 54570, "amzSku": "Z0-2MXP-GOET", "name": "Farmhouse Preserve Gluten Free Medium Double Egg Yolk Noodle", "l": 16.0, "w": 9.0, "h": 7.5, "wt": 4.6, "upc": 6, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 55570, "amzSku": "110537-2", "name": "Farmhouse Preserve Gluten Free Medium Double Egg Yolk Noodle", "l": 16.0, "w": 9.0, "h": 7.5, "wt": 4.6, "upc": 3, "prep": "label", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 56570, "amzSku": "IB-8E5E-K0PG", "name": "Amish Wedding - Peanut Butter Spread, 9 oz Jar", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 57570, "amzSku": "JS-RXFW-ZWHM", "name": "Backroad Country Smoked Pickled Bologna, Packed in Vinegar B", "l": 12.5, "w": 9.5, "h": 5.5, "wt": 15.0, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 58570, "amzSku": "2I-M8DZ-U60F", "name": "Backroad Country - Green Apple Licorice Twists, (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 59570, "amzSku": "62-5420-OYBV", "name": "Backroad Country - Red Licorice Twists, (Pack of 2)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 60570, "amzSku": "KA-9PWG-TCCR", "name": "Backroad Country - Blue Raspberry Licorice (Single)", "l": 15.5, "w": 9.75, "h": 5.25, "wt": 13.4, "upc": 12, "prep": "label", "minsPerCase": 0.25, "timedRuns": [], "timedAvg": 0.25, "hasTiming": true}, {"id": 61570, "amzSku": "FB24CS-CH", "name": "Ohh FFFFUDGE!! A Christmas Story Creamy Chocolate Fudge", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 62570, "amzSku": "FB24CS-CW", "name": "Ohh FFFFUDGE!! A Christmas Story Chocolate Walnut Fudge", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 63570, "amzSku": "1027803071", "name": "Gumi-Aid - Fruit Flavored Gummy Bandages 3 oz (2 Pack)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 4, "prep": "multipack", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 64570, "amzSku": "1043631047", "name": "Scottie Dogs Strawberry Licorice 6 oz - (2 Pack)", "l": 12.0, "w": 7.75, "h": 5.0, "wt": 6.0, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 65570, "amzSku": "1043631106", "name": "Scottie Dogs Black Licorice 6 oz, (2 Pack)", "l": 12.0, "w": 7.75, "h": 5.0, "wt": 6.0, "upc": 6, "prep": "multipack", "minsPerCase": 1.25, "timedRuns": [], "timedAvg": 1.25, "hasTiming": true}, {"id": 66570, "amzSku": "1043680780", "name": "Candy Buttons - Mega Buttons, (Single)", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 24, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}, {"id": 67570, "amzSku": "1069226816", "name": "Scottie Dogs Black Licorice 6 oz", "l": 12.0, "w": 7.75, "h": 5.0, "wt": 6.0, "upc": 12, "prep": "label", "minsPerCase": 1.0, "timedRuns": [], "timedAvg": 1.0, "hasTiming": true}, {"id": 68570, "amzSku": "DE-SWRR-V8GQ", "name": "Jelly Belly Cherry Lovers Heart-Shaped Jelly Beans, 6 Flavor", "l": 12.0, "w": 7.75, "h": 5.0, "wt": 6.0, "upc": 12, "prep": "label", "minsPerCase": 1.0, "timedRuns": [], "timedAvg": 1.0, "hasTiming": true}, {"id": 69570, "amzSku": "MD-OIYU-MOB3", "name": "Jelly Belly Cinnamon Lovers Heart-Shaped Jelly Beans, 7 oz", "l": 12.0, "w": 7.75, "h": 5.0, "wt": 6.0, "upc": 12, "prep": "label", "minsPerCase": 1.0, "timedRuns": [], "timedAvg": 1.0, "hasTiming": true}, {"id": 70570, "amzSku": "SNLGLKSPRGCUP", "name": "Glock - Spring Cups, SP00070", "l": 0, "w": 0, "h": 0, "wt": 0, "upc": 1, "prep": "label", "minsPerCase": null, "timedRuns": [], "timedAvg": null, "hasTiming": false}];
 if(!skus.length) {
   skus = SEED_SKUS;
@@ -1618,6 +1759,7 @@ function timerStop(){
   s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
   s.hasTiming=true;
   save();
+  syncSkuToSheet(s);
   renderTimerRuns(s);
   // Reset for next case
   timerElapsed=0;timerRunning=false;
@@ -1726,6 +1868,30 @@ function refreshShiftEstimate(){
   const shiftEl=document.getElementById('shift-estimator-wrap');
   if(shiftEl) shiftEl.innerHTML=renderShiftEstimator(null,sorted,totalMins,untimedSkus);
 }
+
+</script>
+</body>
+</html>;
+
+async function init() {
+  injectSyncUI();
+  // Try to load from Sheet first; fall back to localStorage or seed data
+  const synced = await syncFromSheet();
+  if (!synced) {
+    if (!skus.length) {
+      skus = SEED_SKUS;
+      save();
+    }
+    setSyncStatus('offline');
+  }
+  renderSKUs();
+  renderFolderUI();
+  if (folderMeta) showFeedback('shipment-feedback',
+    '↻ Folder connected — click <strong>Reload latest file</strong> to load this week\'s shipment.',
+    'warn', true);
+}
+
+init();
 
 </script>
 </body>
