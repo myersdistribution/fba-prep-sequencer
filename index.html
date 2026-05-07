@@ -285,8 +285,8 @@ select{background:var(--bg);border:1px solid var(--border);color:var(--text);fon
     <hr class="divider">
     <div class="section-label">Add manually</div>
     <div class="add-row">
-      <div class="field sku-field"><label>Amazon SKU</label><input type="text" id="new-amzsku" placeholder="e.g. 1054983958"></div>
-      <div class="field name-field"><label>Display Name</label><input type="text" id="new-name" placeholder="e.g. Dawn 3pk"></div>
+      <div class="field sku-field"><label>Amazon SKU <span style="color:var(--danger)">*</span></label><input type="text" id="new-amzsku" placeholder="e.g. 1054983958"></div>
+      <div class="field name-field"><label>Display Name <span style="color:var(--danger)">*</span></label><input type="text" id="new-name" placeholder="e.g. Dawn 3pk"></div>
       <div class="field"><label>Length (in)</label><input type="number" id="new-l" placeholder="18" min="1"></div>
       <div class="field"><label>Width (in)</label><input type="number" id="new-w" placeholder="12" min="1"></div>
       <div class="field"><label>Height (in)</label><input type="number" id="new-h" placeholder="10" min="1"></div>
@@ -294,7 +294,7 @@ select{background:var(--bg);border:1px solid var(--border);color:var(--text);fon
       <div class="field"><label>Units/Case</label><input type="number" id="new-upc" placeholder="6" min="1"></div>
       <div class="field"><label>Mins/Case</label><input type="number" id="new-mins" placeholder="2.5" min="0" step="0.1"></div>
       <div class="field"><label>Prep Type</label><select id="new-prep"><option value="no-prep">No Prep</option><option value="label">Label Only</option><option value="boxed">Boxed</option><option value="multipack">Multipack</option><option value="other">Other…</option></select></div>
-      <div class="field" style="justify-content:flex-end"><button class="btn btn-primary" onclick="addSKU()">+ Add SKU</button></div>
+      <div class="field" style="justify-content:flex-end"><button class="btn btn-primary" onclick="addSKU()">+ Add SKU</button><div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px">* required — fill dims & weight as you process</div></div>
     </div>
   </div>
 </div>
@@ -848,7 +848,7 @@ function renderFolderUI(){
 function processXLSXBuffer(buf,filename){
   try{
     const wb=XLSX.read(buf,{type:'array'});
-    const preferred=['Create Draft Template','FBA Prep Sequencer - SKU Library','shipment','data'];
+    const preferred=['Create Draft Template','Sheet1','shipment','data'];
     let ws=null;
     for(const n of preferred){if(wb.SheetNames.includes(n)){ws=wb.Sheets[n];break;}}
     if(!ws) ws=wb.Sheets[wb.SheetNames[0]];
@@ -942,8 +942,8 @@ function addSKU(){
   const wt=parseFloat(document.getElementById('new-wt').value),upc=parseInt(document.getElementById('new-upc').value);
   const prep=document.getElementById('new-prep').value,displayName=name||amzSku;
   const minsPerCase=parseFloat(document.getElementById('new-mins').value)||0;
-  if(!displayName||[l,w,h,wt,upc].some(v=>!v)){alert('Fill in all fields.');return;}
-  skus.push({id:Date.now(),amzSku,name:displayName,l,w,h,wt,upc,prep,minsPerCase});
+  if(!displayName){alert('Amazon SKU or Display Name is required.');return;}
+  skus.push({id:Date.now(),amzSku,name:displayName,l:l||0,w:w||0,h:h||0,wt:wt||0,upc:upc||1,prep,minsPerCase});
   save();renderSKUs();
   ['new-amzsku','new-name','new-l','new-w','new-h','new-wt','new-upc','new-mins'].forEach(id=>document.getElementById(id).value='');
 }
@@ -960,14 +960,27 @@ function editCell(skuId, field, currentVal, el, type='text'){
   const s=skus.find(x=>x.id===skuId); if(!s) return;
   let input;
   if(field==='prep'){
+    // Use a custom overlay select that won't close immediately
+    const wrapper=document.createElement('div');
+    wrapper.style.cssText='position:relative;display:inline-block;width:100%';
     input=document.createElement('select');
     input.className='inline-select';
+    input.style.cssText='width:100%;position:relative;z-index:10';
+    input.size=1;
     ['no-prep','label','boxed','multipack','other'].forEach(v=>{
       const o=document.createElement('option');
       o.value=v; o.textContent=prepLabel(v);
       if(v===currentVal) o.selected=true;
       input.appendChild(o);
     });
+    el.innerHTML=''; el.appendChild(input);
+    // Commit on change, not blur — fixes the hold-to-keep-open issue
+    input.addEventListener('change',()=>{
+      const val=input.value;
+      const s=skus.find(x=>x.id===skuId); if(s){ s[field]=val; save(); renderSKUs(); const edited=skus.find(x=>x.id===skuId); if(edited) syncSkuToSheet(edited); }
+    });
+    input.focus();
+    return; // skip the generic blur/keydown handling below
   } else {
     input=document.createElement('input');
     input.type=type; input.className='inline-input';
