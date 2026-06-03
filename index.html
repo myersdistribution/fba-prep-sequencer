@@ -1019,7 +1019,52 @@ function addSKU(){
   save();renderSKUs();
   ['new-amzsku','new-name','new-l','new-w','new-h','new-wt','new-upc','new-mins'].forEach(id=>document.getElementById(id).value='');
 }
-function deleteSKU(id){skus=skus.filter(s=>s.id!==id);delete qtys[id];save();renderSKUs();}
+function deleteSKU(id){
+  const s=skus.find(x=>x.id===id);
+  if(!s) return;
+  // Custom confirmation modal
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML=`
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:min(420px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.5)">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--danger);letter-spacing:.15em;text-transform:uppercase;margin-bottom:10px">⚠ Confirm Delete</div>
+      <div style="font-size:15px;font-weight:500;margin-bottom:8px">${s.name}</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:20px">Amazon SKU: ${s.amzSku||'—'}<br>This will permanently delete the SKU from the app AND the Google Sheet. This cannot be undone.</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-ghost" id="del-cancel">Cancel</button>
+        <button class="btn" style="background:var(--danger);color:#fff;font-weight:600" id="del-confirm">Delete permanently</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('del-cancel').onclick=()=>document.body.removeChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay) document.body.removeChild(overlay);});
+  document.getElementById('del-confirm').onclick=async()=>{
+    document.body.removeChild(overlay);
+    // Remove locally
+    skus=skus.filter(x=>x.id!==id);
+    delete qtys[id];
+    save();
+    renderSKUs();
+    // Delete from Google Sheet via Apps Script
+    if(APPS_SCRIPT_URL){
+      try{
+        const res=await fetch(APPS_SCRIPT_URL,{
+          method:'POST',mode:'cors',
+          headers:{'Content-Type':'text/plain'},
+          body:JSON.stringify({
+            action:'delete',
+            sheetId:'1EiCOt1t1IxllhW9F9yrRQR4ZvtouNusx3Yu3Oky6_Gs',
+            sheetName:'FBA Prep Sequencer - SKU Library',
+            amzSku:s.amzSku
+          })
+        });
+        const result=await res.json().catch(()=>({}));
+        if(result.success) console.log('Deleted from sheet — row',result.row,'SKU:',s.amzSku);
+        else console.warn('Sheet delete failed:',result.error);
+      }catch(e){console.warn('Sheet delete error:',e.message);}
+    }
+  };
+}
 function prepLabel(p){
   const map={'no-prep':'No Prep','label':'Label Only','boxed':'Boxed','multipack':'Multipack'};
   return map[p]||p||'—';
