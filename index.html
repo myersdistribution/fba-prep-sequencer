@@ -1930,7 +1930,11 @@ async function init() {
     'warn', true);
 }
 
-init();
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
 
 </script>
 </body>
