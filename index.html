@@ -221,6 +221,10 @@ select{background:var(--bg);border:1px solid var(--border);color:var(--text);fon
   </div>
   <div class="header-actions">
     <button class="btn btn-ghost" onclick="exportCSV()">⬇ Export CSV</button>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+      <div id="sync-status" style="font-family:var(--mono);font-size:11px;color:var(--muted)">○ Not synced</div>
+      <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="syncFromSheet()">↻ Sync from Sheet</button>
+    </div>
   </div>
 </div>
 
@@ -384,8 +388,22 @@ select{background:var(--bg);border:1px solid var(--border);color:var(--text);fon
         <button class="btn btn-ghost" id="btn-timer-resume" onclick="timerResume()" style="display:none">▶ Resume</button>
         <button class="btn" style="background:var(--accent2);color:#0f1117;font-weight:600" id="btn-timer-stop" onclick="timerStop()" style="display:none">⏹ Stop & Log</button>
       </div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-bottom:8px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-bottom:12px">
         Time each case from first touch to outbound pallet. Log as many runs as you like.
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:7px;margin-bottom:10px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap">Manual entry:</div>
+        <input type="number" id="manual-mins" min="0" step="0.01" placeholder="mins (e.g. 1.5)"
+          style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:13px;border-radius:5px;padding:6px 10px;outline:none"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+          onkeydown="if(event.key==='Enter') logManualTime()">
+        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px;white-space:nowrap" onclick="logManualTime()">+ Log</button>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap">or set avg:</div>
+        <input type="number" id="manual-avg" min="0" step="0.01" placeholder="set avg directly"
+          style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:13px;border-radius:5px;padding:6px 10px;outline:none"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+          onkeydown="if(event.key==='Enter') setManualAvg()">
+        <button class="btn btn-primary" style="font-size:11px;padding:5px 12px;white-space:nowrap" onclick="setManualAvg()">Set</button>
       </div>
       <div class="timer-runs" id="timer-runs"></div>
       <div class="timer-avg" id="timer-avg" style="display:none"></div>
@@ -493,6 +511,33 @@ function discardRun(skuId,runIdx){
     s.timedAvg=null; s.hasTiming=false;
   }
   save();renderTimerRuns(s);
+}
+
+function logManualTime(){
+  const s=skus.find(x=>x.id===timerSkuId); if(!s) return;
+  const mins=parseFloat(document.getElementById('manual-mins').value);
+  if(!mins||isNaN(mins)||mins<=0){alert('Enter a valid time in minutes (e.g. 1.5 for 1 min 30 sec)');return;}
+  if(!s.timedRuns) s.timedRuns=[];
+  const ms=Math.round(mins*60000);
+  s.timedRuns.push({ms,mins:parseFloat(mins.toFixed(4)),ts:new Date().toLocaleTimeString()+' (manual)'});
+  s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
+  s.hasTiming=true;
+  document.getElementById('manual-mins').value='';
+  save(); syncSkuToSheet(s); renderTimerRuns(s); renderSKUs();
+}
+
+function setManualAvg(){
+  const s=skus.find(x=>x.id===timerSkuId); if(!s) return;
+  const mins=parseFloat(document.getElementById('manual-avg').value);
+  if(!mins||isNaN(mins)||mins<=0){alert('Enter a valid average in minutes (e.g. 2.5)');return;}
+  s.timedAvg=parseFloat(mins.toFixed(4));
+  s.minsPerCase=s.timedAvg;
+  s.hasTiming=true;
+  // Add as a single manual run so it shows in the log
+  if(!s.timedRuns) s.timedRuns=[];
+  s.timedRuns.push({ms:Math.round(mins*60000),mins:parseFloat(mins.toFixed(4)),ts:'manual average set '+new Date().toLocaleTimeString()});
+  document.getElementById('manual-avg').value='';
+  save(); syncSkuToSheet(s); renderTimerRuns(s); renderSKUs();
 }
 
 function renderTimerRuns(s){
@@ -670,6 +715,33 @@ function discardRun(skuId,runIdx){
     s.timedAvg=null; s.hasTiming=false;
   }
   save();renderTimerRuns(s);
+}
+
+function logManualTime(){
+  const s=skus.find(x=>x.id===timerSkuId); if(!s) return;
+  const mins=parseFloat(document.getElementById('manual-mins').value);
+  if(!mins||isNaN(mins)||mins<=0){alert('Enter a valid time in minutes (e.g. 1.5 for 1 min 30 sec)');return;}
+  if(!s.timedRuns) s.timedRuns=[];
+  const ms=Math.round(mins*60000);
+  s.timedRuns.push({ms,mins:parseFloat(mins.toFixed(4)),ts:new Date().toLocaleTimeString()+' (manual)'});
+  s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
+  s.hasTiming=true;
+  document.getElementById('manual-mins').value='';
+  save(); syncSkuToSheet(s); renderTimerRuns(s); renderSKUs();
+}
+
+function setManualAvg(){
+  const s=skus.find(x=>x.id===timerSkuId); if(!s) return;
+  const mins=parseFloat(document.getElementById('manual-avg').value);
+  if(!mins||isNaN(mins)||mins<=0){alert('Enter a valid average in minutes (e.g. 2.5)');return;}
+  s.timedAvg=parseFloat(mins.toFixed(4));
+  s.minsPerCase=s.timedAvg;
+  s.hasTiming=true;
+  // Add as a single manual run so it shows in the log
+  if(!s.timedRuns) s.timedRuns=[];
+  s.timedRuns.push({ms:Math.round(mins*60000),mins:parseFloat(mins.toFixed(4)),ts:'manual average set '+new Date().toLocaleTimeString()});
+  document.getElementById('manual-avg').value='';
+  save(); syncSkuToSheet(s); renderTimerRuns(s); renderSKUs();
 }
 
 function renderTimerRuns(s){
@@ -1704,18 +1776,8 @@ async function syncSkuToSheet(sku) {
   }
 }
 
-// Add sync status indicator to header
-function injectSyncUI() {
-  const hdr = document.querySelector('.header-actions');
-  if (!hdr || document.getElementById('sync-status')) return;
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:6px';
-  wrap.innerHTML = `
-    <div id="sync-status" style="font-family:var(--mono);font-size:11px;color:var(--muted)">○ Not synced</div>
-    <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="syncFromSheet()">↻ Sync from Sheet</button>
-  `;
-  hdr.appendChild(wrap);
-}
+// injectSyncUI — now rendered directly in HTML, no injection needed
+function injectSyncUI() { /* no-op — sync UI is in the HTML */ }
 
 // Override save() to also trigger a write-back for the last-modified SKU
 const _origSave = save;
@@ -1825,6 +1887,33 @@ function discardRun(skuId,runIdx){
     s.timedAvg=null; s.hasTiming=false;
   }
   save();renderTimerRuns(s);
+}
+
+function logManualTime(){
+  const s=skus.find(x=>x.id===timerSkuId); if(!s) return;
+  const mins=parseFloat(document.getElementById('manual-mins').value);
+  if(!mins||isNaN(mins)||mins<=0){alert('Enter a valid time in minutes (e.g. 1.5 for 1 min 30 sec)');return;}
+  if(!s.timedRuns) s.timedRuns=[];
+  const ms=Math.round(mins*60000);
+  s.timedRuns.push({ms,mins:parseFloat(mins.toFixed(4)),ts:new Date().toLocaleTimeString()+' (manual)'});
+  s.timedAvg=parseFloat((s.timedRuns.reduce((a,r)=>a+r.mins,0)/s.timedRuns.length).toFixed(4));
+  s.hasTiming=true;
+  document.getElementById('manual-mins').value='';
+  save(); syncSkuToSheet(s); renderTimerRuns(s); renderSKUs();
+}
+
+function setManualAvg(){
+  const s=skus.find(x=>x.id===timerSkuId); if(!s) return;
+  const mins=parseFloat(document.getElementById('manual-avg').value);
+  if(!mins||isNaN(mins)||mins<=0){alert('Enter a valid average in minutes (e.g. 2.5)');return;}
+  s.timedAvg=parseFloat(mins.toFixed(4));
+  s.minsPerCase=s.timedAvg;
+  s.hasTiming=true;
+  // Add as a single manual run so it shows in the log
+  if(!s.timedRuns) s.timedRuns=[];
+  s.timedRuns.push({ms:Math.round(mins*60000),mins:parseFloat(mins.toFixed(4)),ts:'manual average set '+new Date().toLocaleTimeString()});
+  document.getElementById('manual-avg').value='';
+  save(); syncSkuToSheet(s); renderTimerRuns(s); renderSKUs();
 }
 
 function renderTimerRuns(s){
