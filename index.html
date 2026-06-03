@@ -1587,26 +1587,33 @@ function setSyncStatus(s, msg) {
 
 // Parse CSV text → array of objects using header row
 function parseSheetCSV(csv) {
-  const lines = csv.trim().split('\n');
-  if (lines.length < 2) return [];
-  // Google Sheets CSV uses quoted fields
-  function parseLine(line) {
-    const result = []; let cur = ''; let inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
-      else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
-      else cur += c;
+  // Robust CSV parser that handles quoted fields with commas AND newlines inside them
+  function parseCSV(text) {
+    const rows = [];
+    let row = [], cur = '', inQ = false, i = 0;
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n'); // normalize line endings
+    while (i < text.length) {
+      const c = text[i];
+      if (c === '"') {
+        if (inQ && text[i+1] === '"') { cur += '"'; i += 2; continue; } // escaped quote
+        inQ = !inQ; i++; continue;
+      }
+      if (c === ',' && !inQ) { row.push(cur.trim()); cur = ''; i++; continue; }
+      if (c === '\n' && !inQ) { row.push(cur.trim()); rows.push(row); row = []; cur = ''; i++; continue; }
+      cur += c; i++;
     }
-    result.push(cur); return result;
+    if (cur || row.length) { row.push(cur.trim()); rows.push(row); }
+    return rows;
   }
-  const headers = parseLine(lines[0]);
-  return lines.slice(1).map(line => {
-    const vals = parseLine(line);
+
+  const rows = parseCSV(csv.trim());
+  if (rows.length < 2) return [];
+  const headers = rows[0].map(h => h.trim());
+  return rows.slice(1).map(row => {
     const obj = {};
-    headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
+    headers.forEach((h, i) => obj[h] = (row[i] || '').trim());
     return obj;
-  }).filter(r => r.amazon_sku || r.product_name);
+  }).filter(r => (r.amazon_sku || r.product_name) && r.amazon_sku !== 'amazon_sku');
 }
 
 // Convert a sheet row → app SKU object
