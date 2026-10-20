@@ -589,7 +589,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.18.2-training';
+const VERSION='2.18.3-training';
 const BUILD='2026-10-20';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -922,7 +922,7 @@ function manualRate(){ const id=document.getElementById('man-sku').value, sec=pa
 async function runSet(pid,idx,flag){ const p=library.find(x=>x.id===pid); if(!p) return; if(flag==='x'){ const r=p.runs[idx]; if(!await ask(`Delete this run? ${p.name.slice(0,40)} — ${r.units} units in ${r.mins.toFixed(1)} min. This can't be undone.`,{ok:'Delete run'})) return; p.runs.splice(idx,1); } else p.runs[idx].flag=flag; saveLibrary(); renderAll(); }
 function renderTimer(){
   const sel=document.getElementById('timer-sku'), man=document.getElementById('man-sku'); const keep=sel.value, keepM=man.value; sel.innerHTML=skuOptions(); man.innerHTML=skuOptions(); if(keep) sel.value=keep; if(keepM) man.value=keepM;
-  document.getElementById('man-list').innerHTML=library.map(p=>`<option value="${esc(p.sku)}">${esc(p.name.slice(0,50))}</option><option value="${esc(p.asin)}">${esc(p.name.slice(0,50))}</option>`).join('');
+  document.getElementById('man-list').innerHTML=library.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option value="${esc(p.sku)}">${esc(p.name.slice(0,60))} · ${esc(p.asin)}</option>`).join(''); // one entry per product; typing a name, SKU or ASIN all match
   const running=timer&&!timer.stop, stopped=timer&&timer.stop;
   if(timer){ sel.value=timer.id; sel.disabled=true; } else sel.disabled=false; timerSkuChanged();
   document.getElementById('timer-start').classList.toggle('hidden',!!timer); document.getElementById('timer-stop').classList.toggle('hidden',!running);
