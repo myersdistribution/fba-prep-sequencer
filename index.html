@@ -590,7 +590,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.19.3-order';
+const VERSION='2.19.4-order';
 const BUILD='2026-10-20';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -642,9 +642,9 @@ function mergeShipment(mine,theirs,theirsNewer){ if(!mine||!theirs) return their
   for(const k of ['actual','picked','prepped']){ const a=mine[k]||{}, b=theirs[k]||{}; base[k]=theirsNewer?{...a,...b}:{...b,...a}; }
   // job clock sessions: union by id; a stop time beats none, otherwise the newer copy's times win
   { const S=new Map(); const put=(x,win)=>{ const e=S.get(x.id); if(!e){ S.set(x.id,{...x}); return; } const m={...(win?e:x),...(win?x:e)}; m.stop=e.stop&&x.stop?(win?x.stop:e.stop):(e.stop||x.stop||null); S.set(x.id,m); };
-    (theirsNewer?mine.sessions:theirs.sessions||[]).forEach(x=>put(x,false)); (theirsNewer?theirs.sessions:mine.sessions||[]).forEach(x=>put(x,true)); if(S.size) base.sessions=[...S.values()]; }
+    ((theirsNewer?mine.sessions:theirs.sessions)||[]).forEach(x=>put(x,false)); ((theirsNewer?theirs.sessions:mine.sessions)||[]).forEach(x=>put(x,true)); if(S.size) base.sessions=[...S.values()]; }
   // lines: union by id; units from the newer copy
-  const lines=new Map(); (theirsNewer?mine.lines:theirs.lines||[]).forEach(l=>lines.set(l.id,{...l})); (theirsNewer?theirs.lines:mine.lines||[]).forEach(l=>lines.set(l.id,{...l})); base.lines=[...lines.values()];
+  const lines=new Map(); ((theirsNewer?mine.lines:theirs.lines)||[]).forEach(l=>lines.set(l.id,{...l})); ((theirsNewer?theirs.lines:mine.lines)||[]).forEach(l=>lines.set(l.id,{...l})); base.lines=[...lines.values()];
   return base; }
 // libraries merge per product: runs are a union (never dropped), newest wins for edited fields, locations by their own stamp
 function mergeLibrary(mineIn,theirsIn,theirsNewer){ const A=splitLib(mineIn), B=splitLib(theirsIn); tombstones=mergeTombs(tombstones,mergeTombs(A.tombs,B.tombs)); store.quiet('tombstones',tombstones);
