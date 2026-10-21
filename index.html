@@ -589,7 +589,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.18.3-training';
+const VERSION='2.19.0-stacks';
 const BUILD='2026-10-20';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1331,13 +1331,13 @@ function buildPlan(){ plan_endFilm=null;
   const layers=[]; const leftovers=[];
   for(const [key,d] of demand){ const G=d.G, per=G.layer||G.gridFit||1;
     // split items into boxes pool, heaviest product first (keeps a product together)
-    let pool=d.items.map(it=>({...it})).sort((a,b)=>(b.wtEach-a.wtEach)||(b.boxes-a.boxes));
+    let pool=d.items.map(it=>({...it})).sort((a,b)=>(b.boxes-a.boxes)||(b.wtEach-a.wtEach)); // most boxes first: whole pallets of one product, one mixed layer where it changes over
     const total=pool.reduce((s,i)=>s+i.boxes,0); const full=Math.floor(total/per);
     for(let i=0;i<full;i++){ let need=per, comp=[], wt=0;
       while(need>0){ const it=pool.find(x=>x.boxes>0); const take=Math.min(need,it.boxes); it.boxes-=take; need-=take; wt+=take*it.wtEach; comp.push({p:it.p,boxes:take}); }
       const gf=gapFills.find(g=>g.group===G.name); let gap=null;
       if(gf&&(!G.base||i>0)){ const li=G.base?i-1:i; if(li<gf.layers){ gap={comp:[],boxes:0,wt:0}; for(const t of gf.fill){ const share=Math.floor(t.boxes/gf.layers)+(li<t.boxes%gf.layers?1:0); if(share>0){ gap.comp.push({p:t.p,boxes:share}); gap.boxes+=share; gap.wt+=share*t.wtEach; } } wt+=gap.wt; } }
-      layers.push({kind:'full',mixedFlavors:comp.length>1,group:G.name,h:G.h,wt,boxes:per+(gap?gap.boxes:0),comp:gap?comp.concat(gap.comp.map(c=>({...c,inGap:true}))):comp,gap,fragile:G.fragile,weak:G.weak,base:G.base,stack:G.stack||null,cap:G.load||((G.wt||0)<=settings.lightBox?Math.max(settings.loadMin,settings.loadFactor*wt):Infinity)}); }
+      layers.push({seq:layers.length,kind:'full',mixedFlavors:comp.length>1,group:G.name,h:G.h,wt,boxes:per+(gap?gap.boxes:0),comp:gap?comp.concat(gap.comp.map(c=>({...c,inGap:true}))):comp,gap,fragile:G.fragile,weak:G.weak,base:G.base,stack:G.stack||null,cap:G.load||((G.wt||0)<=settings.lightBox?Math.max(settings.loadMin,settings.loadFactor*wt):Infinity)}); }
     const rest=pool.filter(x=>x.boxes>0); if(rest.length) leftovers.push({G,items:rest,boxes:rest.reduce((s,i)=>s+i.boxes,0)});
   }
   // mixed layers from leftovers: cluster by height within tol; weak groups stay alone
@@ -1349,7 +1349,7 @@ function buildPlan(){ plan_endFilm=null;
     while(anyLeft){ anyLeft=false; used=0;wt=0;hmax=0; const c=[]; const gnames=new Set();
       for(const m of members){ for(const it of m.items){ while(it.boxes>0&&used+fp(m.G)<=area*MIXFILL){ it.boxes--; used+=fp(m.G); wt+=it.wtEach; hmax=Math.max(hmax,m.G.h); gnames.add(m.G.name); const e=c.find(x=>x.p===it.p); if(e) e.boxes++; else c.push({p:it.p,boxes:1}); } } }
       if(c.length){ const boxes=c.reduce((s,x)=>s+x.boxes,0);
-        const capM=Math.min(...members.map(m=>m.G.load||Infinity)); layers.push({kind:gnames.size>1?'mixed':'partial',group:[...gnames].join(' + '),h:hmax,wt,boxes,comp:c,fragile:members.some(m=>m.G.fragile),weak:members.some(m=>m.G.weak),base:members.every(m=>m.G.base)&&used/area>=0.5,fill:used/area,cap:isFinite(capM)?capM:(members.some(m=>(m.G.wt||0)<=settings.lightBox)?Math.max(settings.loadMin,settings.loadFactor*wt):Infinity)}); }
+        const capM=Math.min(...members.map(m=>m.G.load||Infinity)); layers.push({seq:layers.length,kind:gnames.size>1?'mixed':'partial',group:[...gnames].join(' + '),h:hmax,wt,boxes,comp:c,fragile:members.some(m=>m.G.fragile),weak:members.some(m=>m.G.weak),base:members.every(m=>m.G.base)&&used/area>=0.5,fill:used/area,cap:isFinite(capM)?capM:(members.some(m=>(m.G.wt||0)<=settings.lightBox)?Math.max(settings.loadMin,settings.loadFactor*wt):Infinity)}); }
       anyLeft=members.some(m=>m.items.some(it=>it.boxes>0)); }
   }
   // ── fit into the fewest pallets the hard limits allow; relax soft rules step by step ──
@@ -1367,7 +1367,8 @@ function buildPlan(){ plan_endFilm=null;
     const lv=level; const relax=lv>=1, fillerMode=lv>=2, creative=lv>=3;
     const baseFill=lv>=1?0.6:0.75; // once rules relax, a 60%-full heavy mixed layer can be a base under lighter full layers
     const rank=L=>(L.base?-2:0)+(L.fragile?2:0)+((L.kind==='full'||(L.fill||0)>=baseFill)?0:1);
-    layers.sort((a,b)=>rank(a)-rank(b)||b.wt-a.wt||((a.mixedFlavors?1:0)-(b.mixedFlavors?1:0)));
+    const gw={}; layers.forEach(L=>{ if(L.kind==='full') gw[L.group]=Math.max(gw[L.group]||0,L.wt); }); const sortW=L=>L.kind==='full'?gw[L.group]:L.wt;
+    layers.sort((a,b)=>rank(a)-rank(b)||sortW(b)-sortW(a)||(a.seq||0)-(b.seq||0));
     let work=layers.map(L=>({...L,comp:L.comp.map(c=>({...c})),notes:[]})), fl=[];
     let topPool=[];
     if(creative){ // sparse leftovers of any height are held back and dropped into each pallet's headroom at the end (uneven top-off, hand-fit)
@@ -1403,9 +1404,11 @@ function buildPlan(){ plan_endFilm=null;
         // starting this group on a fresh pallet: only while the split plan still has a slot (splits are planned up front, min 2 layers each)
         if(!(splitPlan[L.group]||[]).length) return -Infinity;
         return (P.layers.length===0?1:-1)+bal; }
+      if(L.base&&L.kind!=='full'){ const same=P.layers.filter(x=>x.base&&x.group===L.group).length; const sameProd=P.layers.some(x=>x.comp.some(c=>L.comp.some(d=>d.p===c.p))); if(same>0) return 1.5+(sameProd?0.6:0)+bal; return (P.layers.length===0?-0.5:-1)+bal; }
       // any other full layer: stay with its group where one is already started (fewer splits, one product = one stack), else balance
       if(L.kind==='full'){ const same=P.layers.filter(x=>x.group===L.group&&x.kind==='full').length; if(same>0) return 1.5+same*0.05+bal; }
-      return bal; };
+      // leftovers ride with the pallet that already carries the same product (one place to find it, one label)
+      const sameProd=P.layers.some(x=>x.comp.some(c=>L.comp.some(d=>d.p===c.p))); return bal+(sameProd?0.4:0); };
     const putOn=(P,L,idx)=>{ P.layers.splice(idx,0,L); P.h+=L.h; P.wt+=L.wt;
       { for(let i=0;i<P.layers.length;i++){ const X=P.layers[i]; const aboveOther=P.layers.slice(i+1).filter(x=>x.group!==X.group).reduce((s,x)=>s+x.wt,0); if(aboveOther>X.cap&&!X.notes.includes('over load cap')) X.notes.push('over load cap'); }
         for(let i=0;i<P.layers.length-1;i++){ const X=P.layers[i],up=P.layers[i+1]; if(X.kind!=='full'&&(X.fill||0)<baseFill&&up.kind==='full'){ const n=isLight(up)?'light full layer on a partial one — level it by hand':'full layer on a partial one — level it out by hand'; if(!up.notes.includes(n)) up.notes.push(n);} } } };
@@ -1533,7 +1536,7 @@ function renderPrep(){
   for(const r of plan.seq){
     if(r.note){ if(r.note==='heat'&&heatAt!=null&&r.text.startsWith('Turn on')) r.text=`Turn on the heat tunnel about ${fmtMin(Math.max(0,heatAt-settings.warmup))} into the day (${settings.warmup} min warm-up before the first shrink run)`; const col=r.note==='film'?'var(--warn)':r.note==='heat'?'var(--danger)':'var(--accent2)'; html+=`<div class="setup-hd" style="color:${col}"><span>${r.note==='heat'?'🔥 ':r.note==='film'?'⟲ ':'▶ '}${esc(r.text)}</span></div>`; continue; }
     n++; const em=r.done?null:minsForBoxes(r.p,r.boxes); if(em!=null) clock+=em;
-    html+=`<div class="run ${r.done?'done':''}"><div class="n">${n}</div><div style="flex:1"><div>${r.p.a.base?'<span class="pill">label in place — don\'t move</span> ':''}${esc(r.p.name)} ${r.p.loc?`<span class="pill">${esc(r.p.loc)}</span>`:''}<span class="mono muted">· ${r.units} units · ${r.boxes} boxes${r.done?' · <span style="color:var(--accent2)">already prepped — stack from staging</span>':em!=null?` · ~${fmtMin(em)} prep${rateOf(r.p).dflt?' (default)':rateOf(r.p).manual?' (set)':''}`:' · <span style="color:var(--warn)">no rate yet</span>'}${atOf.has(r)?` · done ~<span style="color:var(--accent)">${fmtClock(anchor+atOf.get(r))}</span>`:''}${r.partPrepped?` · <span style="color:var(--accent2)">${r.partPrepped} pre-prepped</span>`:''}</span> <span class="pill prep">${esc(prepLabel(r.p.a.prep))}</span>${r.staged?' <span class="pill flag">staged</span>':''}</div>
+    html+=`<div class="run ${r.done?'done':''}"><div class="n">${n}</div><div style="flex:1"><div>${esc(r.p.name)} ${r.p.loc?`<span class="pill">${esc(r.p.loc)}</span>`:''}<span class="mono muted">· ${r.units} units · ${r.boxes} boxes${r.done?' · <span style="color:var(--accent2)">already prepped — stack from staging</span>':em!=null?` · ~${fmtMin(em)} prep${rateOf(r.p).dflt?' (default)':rateOf(r.p).manual?' (set)':''}`:' · <span style="color:var(--warn)">no rate yet</span>'}${atOf.has(r)?` · done ~<span style="color:var(--accent)">${fmtClock(anchor+atOf.get(r))}</span>`:''}${r.partPrepped?` · <span style="color:var(--accent2)">${r.partPrepped} pre-prepped</span>`:''}</span> <span class="pill prep">${esc(prepLabel(r.p.a.prep))}</span>${r.staged?' <span class="pill flag">staged</span>':''}</div>
       <div class="dest">${(()=>{ const byP={}; r.dest.forEach(d=>{(byP[d.pallet]=byP[d.pallet]||[]).push(d);}); return Object.keys(byP).map(n=>{ const ds=byP[n]; const P=plan.pallets.find(x=>x.n==n); const whole=P&&P.whole&&P.layers.every(L=>L.comp.every(c=>c.p===r.p)); return `<span class="pill" style="border-color:${palColor(+n)};color:${palColor(+n)}">P${n}${whole?' · whole pallet':' '+ds.map(d=>`L${d.layer}${d.inGap?' gap':''} (${d.boxes})`).join(' ')}</span>`; }).join(' '); })()}</div><div class="row" style="margin-top:6px;align-items:center">${prepTimerHtml(r).replace('<div style="margin-top:6px">','<div>')}<button class="btn" style="padding:5px 10px;${r.done?'color:var(--accent2)':''}" onclick="markPrepped('${r.p.id}'${r.done?',0':''})">${r.done?'✓ Staged':'Mark prepped'}</button>${trainBtn(r.p.id)}<button class="btn" style="padding:5px 10px;color:var(--danger)" onclick="openIssue('${r.p.id}',${r.units},'${esc(r.dest.map(d=>'P'+d.pallet+' L'+d.layer).join(', '))}')">⚑ Report issue</button></div></div></div>`; }
   if(plan.endFilm) html+=`<div class="row" style="margin-top:10px;justify-content:flex-end"><span class="help">This plan ends with ${plan.endFilm}" film loaded.</span><button class="btn" onclick="markFilm('${plan.endFilm}')">Shipment done → ${plan.endFilm}" is loaded now</button></div>`;
   el.innerHTML=html+'</div>';
