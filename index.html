@@ -480,6 +480,7 @@ body.touch .dest{font-size:13px}
       <div class="help" style="margin-top:10px" id="ed-attr-preview"></div>
       <div class="row" style="margin-top:12px;justify-content:space-between">
         <button class="btn" onclick="editClearOverride()" id="ed-clear">Use SoStocked values</button>
+        <button class="btn" onclick="editRemove()" style="color:var(--danger)">Remove from library</button>
         <span class="row"><button class="btn" onclick="closeEdit()">Cancel</button><button class="btn btn-primary" onclick="saveEdit()">Save</button></span>
       </div>
     </div>
@@ -589,7 +590,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.19.2-order';
+const VERSION='2.19.3-order';
 const BUILD='2026-10-20';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -620,7 +621,7 @@ async function syncPull(){ if(!syncEnabled()) return false; setSyncStatus('synci
   try{ const j=await syncPost({action:'load'}); const st=j.state||{}; let changed=false;
     for(const k of SYNC_KEYS){ const rec=st[k]; if(!rec||rec.data==null) continue; const localTs=store.get('ts_'+k,0);
       if(k==='training'){ training=mergeTraining(training,rec.data,rec.updated>=localTs); store.quiet('training',training); if(rec.updated<localTs) syncState.pending.add('training'); store.set('ts_'+k,Math.max(localTs,rec.updated)); changed=true; continue; }
-      if(k==='library'){ library=mergeLibrary(library,rec.data.map(normalizeProduct),rec.updated>=localTs).map(normalizeProduct); store.quiet('library',library); if(rec.updated<localTs) syncState.pending.add('library'); store.set('ts_'+k,Math.max(localTs,rec.updated)); changed=true; continue; }
+      if(k==='library'){ library=mergeLibrary(library,rec.data,rec.updated>=localTs).map(normalizeProduct); store.quiet('library',libRecord()); if(rec.updated<localTs) syncState.pending.add('library'); store.set('ts_'+k,Math.max(localTs,rec.updated)); changed=true; continue; }
       if(rec.updated>=localTs){
         if(k==='shipment'){ shipment=mergeShipment(shipment,rec.data,true); store.quiet('shipment',shipment); }
         else if(k==='issues'){ issues=rec.data; store.set('issues',issues); }
@@ -646,21 +647,22 @@ function mergeShipment(mine,theirs,theirsNewer){ if(!mine||!theirs) return their
   const lines=new Map(); (theirsNewer?mine.lines:theirs.lines||[]).forEach(l=>lines.set(l.id,{...l})); (theirsNewer?theirs.lines:mine.lines||[]).forEach(l=>lines.set(l.id,{...l})); base.lines=[...lines.values()];
   return base; }
 // libraries merge per product: runs are a union (never dropped), newest wins for edited fields, locations by their own stamp
-function mergeLibrary(mine,theirs,theirsNewer){ if(!mine||!mine.length) return theirs; if(!theirs||!theirs.length) return mine;
+function mergeLibrary(mineIn,theirsIn,theirsNewer){ const A=splitLib(mineIn), B=splitLib(theirsIn); tombstones=mergeTombs(tombstones,mergeTombs(A.tombs,B.tombs)); store.quiet('tombstones',tombstones);
+  const mine=A.prods, theirs=B.prods; if(!mine||!mine.length) return applyTombs(theirs,tombstones); if(!theirs||!theirs.length) return applyTombs(mine,tombstones);
   const byId=new Map(mine.map(p=>[p.id,p])); const out=[];
   for(const t of theirs){ const m=byId.get(t.id); if(!m){ out.push(t); continue; } byId.delete(t.id);
     const base=theirsNewer?{...m,...t}:{...t,...m}; const runs=new Map(); [...(m.runs||[]),...(t.runs||[])].forEach(r=>{ const k=r.ts+':'+r.units; const ex=runs.get(k); if(!ex||(r.flag==='ok'&&ex.flag!=='ok')||(theirsNewer&&r===t.runs?.find(x=>x===r))) runs.set(k,r); }); base.runs=[...runs.values()].sort((a,b)=>a.ts-b.ts);
     if((m.locTs||0)>(t.locTs||0)){ base.loc=m.loc; base.locTs=m.locTs; } else if(t.locTs){ base.loc=t.loc; base.locTs=t.locTs; }
     if((m.override?.ts||0)>(t.override?.ts||0)){ base.override=m.override; for(const k of Object.keys(m.override||{})) if(k!=='ts') base[k]=m[k]; } else if(t.override){ base.override=t.override; for(const k of Object.keys(t.override||{})) if(k!=='ts') base[k]=t[k]; }
     base.setRate=base.setRate??m.setRate??t.setRate??null; base.altSkus=[...new Set([...(m.altSkus||[]),...(t.altSkus||[])])]; out.push(base); }
-  for(const m of byId.values()) out.push(m); return out; }
+  for(const m of byId.values()) out.push(m); return applyTombs(out,tombstones); }
 function markDirty(k){ if(!SYNC_KEYS.includes(k)) return; store.set('ts_'+k,Date.now()); if(!syncEnabled()) return; syncState.pending.add(k); schedulePush(1500); }
 function schedulePush(ms){ clearTimeout(syncState.timer); syncState.timer=setTimeout(syncPush,ms); }
 async function syncPush(){ if(!syncEnabled()||syncState.busy||!syncState.pending.size) return; syncState.busy=true; const keys=[...syncState.pending]; syncState.pending.clear(); setSyncStatus('saving…');
   try{ if((keys.includes('shipment')&&shipment)||keys.includes('library')||keys.includes('training')){ try{ const cur=await syncPost({action:'load'}); const rec=(cur.state||{}).shipment; if(keys.includes('shipment')&&rec&&rec.data&&shipment){ shipment=mergeShipment(shipment,rec.data,false); store.quiet('shipment',shipment); }
-      const lr=(cur.state||{}).library; if(keys.includes('library')&&lr&&lr.data){ library=mergeLibrary(library,lr.data.map(normalizeProduct),false).map(normalizeProduct); store.quiet('library',library); }
+      const lr=(cur.state||{}).library; if(keys.includes('library')&&lr&&lr.data){ library=mergeLibrary(library,lr.data,false).map(normalizeProduct); store.quiet('library',libRecord()); }
       const tr=(cur.state||{}).training; if(keys.includes('training')&&tr&&tr.data){ training=mergeTraining(training,tr.data,false); store.quiet('training',training); } }catch(e){} }
-    const state={}; for(const k of keys){ state[k]=k==='library'?library:k==='shipment'?shipment:k==='issues'?issues:k==='log'?shipLog:k==='settings'?{...settings,url:undefined,key:undefined}:k==='training'?training:null; }
+    const state={}; for(const k of keys){ state[k]=k==='library'?libRecord():k==='shipment'?shipment:k==='issues'?issues:k==='log'?shipLog:k==='settings'?{...settings,url:undefined,key:undefined}:k==='training'?training:null; }
     const j=await syncPost({action:'save',state}); for(const k of keys){ const rec=(j.state||{})[k]; if(rec) store.set('ts_'+k,rec.updated); } setSyncStatus('synced '+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),'ok'); }
   catch(e){ keys.forEach(k=>syncState.pending.add(k)); setSyncStatus('offline — will retry ('+e.message+')','err'); schedulePush(30000); }
   finally{ syncState.busy=false; if(syncState.pending.size) schedulePush(2000); } }
@@ -700,14 +702,20 @@ const SETUP_LABEL={none:'No prep (stickerless)',sticker:'Sticker',"3in1":'3-in-1
 function normalizeProduct(raw){
   const p={id:stableId(raw),name:raw.name||'',sku:String(raw.sku||''),altSkus:raw.altSkus||[],asin:raw.asin||'',fnsku:raw.fnsku||'',
     upc:parseInt(raw.upc)||1,l:num(raw.l),w:num(raw.w),h:num(raw.h),wt:num(raw.wt),unitWt:num(raw.unitWt),attrs:raw.attrs||'',
-    minsPerUnit:raw.minsPerUnit??null,setRate:raw.setRate??null,runs:raw.runs||[],override:raw.override||null,sostocked:raw.sostocked||null,loc:raw.loc||'',locTs:raw.locTs||null};
+    minsPerUnit:raw.minsPerUnit??null,setRate:raw.setRate??null,runs:raw.runs||[],override:raw.override||null,sostocked:raw.sostocked||null,loc:raw.loc||'',locTs:raw.locTs||null,revived:raw.revived||null};
   p.a=parseAttrs(p.attrs); if(p.a.case){ p.l=p.a.case.l; p.w=p.a.case.w; p.h=p.a.case.h; if(p.a.case.wt) p.wt=p.a.case.wt; } return p;
 }
 function stableId(raw){ const a=String(raw.asin||'').trim(), k=String(raw.sku||'').trim(); return a?'a_'+a:(k?'s_'+k:(raw.id||('p_'+Math.random().toString(36).slice(2,9)))); }
 function num(v){const n=parseFloat(v);return isNaN(n)?null:n;}
+let tombstones=[]; // [{id,ts}] products removed on purpose; they ride along inside the library record so every device honours them
+function splitLib(arr){ const prods=[],tombs=[]; (arr||[]).forEach(x=>{ if(x&&x.deleted) tombs.push({id:x.id,ts:x.ts||0}); else if(x) prods.push(x); }); return {prods,tombs}; }
+function mergeTombs(a,b){ const m=new Map(); [...(a||[]),...(b||[])].forEach(t=>{ const e=m.get(t.id); if(!e||t.ts>e.ts) m.set(t.id,t); }); return [...m.values()]; }
+function applyTombs(prods,tombs){ const t=new Map(tombs.map(x=>[x.id,x.ts])); return prods.filter(p=>!(t.has(p.id)&&(p.revived||0)<t.get(p.id))); }
+function libRecord(){ return library.concat(tombstones.map(t=>({id:t.id,deleted:true,ts:t.ts}))); }
+function removeProducts(ids,why){ const set=new Set(ids); const now=Date.now(); const gone=library.filter(p=>set.has(p.id)); if(!gone.length) return 0; library=library.filter(p=>!set.has(p.id)); tombstones=mergeTombs(tombstones,gone.map(p=>({id:p.id,ts:now}))); store.quiet('tombstones',tombstones); saveLibrary(); return gone.length; }
 function loadLibrary(){
-  const saved=store.get('library',null);
-  library=(saved&&saved.length?saved:SEED).map(normalizeProduct);
+  const raw=store.get('library',null); const sp=splitLib(raw); tombstones=mergeTombs(store.get('tombstones',[]),sp.tombs); const saved=sp.prods;
+  library=applyTombs((saved&&saved.length?saved:SEED).map(normalizeProduct),tombstones);
   if(!saved||!saved.length){store.quiet('librarySource','Built-in seed · SoStocked export 2026-09-26');store.quiet('library',library);store.quiet('seedVersion',SEED_VERSION);} // seeding is not a user change: never pushed over the sheet
   // migrate any old random ids (p_xxx) to stable ones and fix references in the saved shipment and issues
   if(saved&&saved.some(q=>String(q.id||'').startsWith('p_'))){ const map={}; saved.forEach(q=>{ const nid=stableId(q); if(q.id&&q.id!==nid) map[q.id]=nid; });
@@ -719,7 +727,7 @@ function loadLibrary(){
     for(const p of library){ const q=seedByAsin.get(p.asin)||seedBySku.get(p.sku)||SEED.find(q=>(q.altSkus||[]).includes(p.sku)); if(!q) continue; if(q.override&&q.override.sku&&q.override.sku!==p.sku){ if(!p.altSkus.includes(p.sku)) p.altSkus.push(p.sku); p.altSkus=p.altSkus.filter(s=>s!==q.override.sku); p.sku=q.override.sku; p.override={...(p.override||{}),sku:q.override.sku,ts:Date.now()}; n++; } if(q.setRate&&!p.setRate&&!(p.runs||[]).some(r=>r.flag==='ok')){ p.setRate=q.setRate; n++; } if(p.attrs!==q.attrs||p.l!==q.l||p.w!==q.w||p.h!==q.h||p.wt!==q.wt){ Object.assign(p,{attrs:q.attrs,l:q.l,w:q.w,h:q.h,wt:q.wt}); p.a=parseAttrs(p.attrs); (q.altSkus||[]).forEach(a=>{ if(a!==p.sku&&!p.altSkus.includes(a)) p.altSkus.push(a); }); n++; } }
     store.quiet('seedVersion',SEED_VERSION); if(n){ store.quiet('library',library); setTimeout(()=>feedback(`${n} products updated from the new build (box groups, dims, gap columns)`,'ok'),300); } }
 }
-function saveLibrary(){store.set('library',library);}
+function saveLibrary(){store.set('library',libRecord());}
 
 function mergeSoStocked(rows,filename){
   let updated=0,added=0,skipped=0;
@@ -739,8 +747,8 @@ function mergeSoStocked(rows,filename){
       Object.assign(ex,so); ex.a=parseAttrs(ex.attrs); if(ex.a.case){ ex.l=ex.a.case.l; ex.w=ex.a.case.w; ex.h=ex.a.case.h; if(ex.a.case.wt) ex.wt=ex.a.case.wt; } seen.add(ex.id); updated++;
     } else { if(!inc.a.case&&inc.upc!==1){ inc.l=inc.w=inc.h=inc.wt=null; if(!inc.a.dimsUnknown){ inc.attrs=(inc.attrs?inc.attrs+'; ':'')+'dims:unknown'; inc.a=parseAttrs(inc.attrs); } } library.push(inc); seen.add(inc.id); added++; }
   }
-  const dropped=library.filter(p=>!seen.has(p.id)).length;
-  library=library.filter(p=>seen.has(p.id));
+  const droppedIds=library.filter(p=>!seen.has(p.id)).map(p=>p.id); const dropped=droppedIds.length;
+  { const now=Date.now(); library=library.filter(p=>seen.has(p.id)); tombstones=mergeTombs(tombstones,droppedIds.map(id=>({id,ts:now}))); const t=new Map(tombstones.map(x=>[x.id,x.ts])); library.forEach(p=>{ if(t.has(p.id)) p.revived=now; }); store.quiet('tombstones',tombstones); }
   saveLibrary(); store.set('librarySource',`${filename} · ${new Date().toLocaleString()}`);
   renderAll();
   feedback(`Library updated from ${filename}\n${updated} updated · ${added} added · ${dropped} removed (no longer tagged Yes) · ${skipped} rows skipped (not Yes)`,'ok');
@@ -1147,6 +1155,7 @@ function saveEdit(){ const p=library.find(x=>x.id===editId); if(!p) return; cons
   if(!Object.keys(changed).length){ closeEdit(); renderAll(); return; }
   if(changed.sku&&changed.sku!==p.sku&&!p.altSkus.includes(p.sku)) p.altSkus.push(p.sku);
   Object.assign(p,e); p.a=parseAttrs(p.attrs); p.override={...(p.override||{}),...changed,ts:Date.now()}; saveLibrary(); closeEdit(); renderAll(); feedback(`${p.name.slice(0,40)} updated — ${Object.keys(changed).filter(k=>k!=='ts').join(', ')}`,'ok'); }
+async function editRemove(){ const p=library.find(x=>x.id===editId); if(!p) return; if(!await ask(`Remove ${p.name.slice(0,50)} from the library on every device? It comes back only if a SoStocked export tagged Yes includes it again.`,{ok:'Remove'})) return; removeProducts([p.id]); closeEdit(); renderAll(); feedback('Removed from the library','ok'); }
 function editClearOverride(){ const p=library.find(x=>x.id===editId); if(!p||!p.override) return; const so=p.sostocked||{}; for(const k of Object.keys(p.override)){ if(k==='ts') continue; if(k in so) p[k]=so[k]; } p.a=parseAttrs(p.attrs); delete p.override; saveLibrary(); closeEdit(); renderAll(); feedback('Reverted to the SoStocked values','ok'); }
 function exportOverrides(){ const rows=library.filter(p=>p.override); if(!rows.length){feedback('No edited products to export','warn');return;}
   const hdr=['SKU','ASIN','Product Name***','Carton Length','Carton Width','Carton Height','Carton Weight','Units per Carton (aka case)','Default Product Packaging Description For WO'];

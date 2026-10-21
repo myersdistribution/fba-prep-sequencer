@@ -97,6 +97,7 @@ function rewrite_(name, header, rows) {
   if (rows.length) sh.getRange(2, 1, rows.length, header.length).setValues(rows);
 }
 function writeLibrarySheets_(lib) {
+  lib = (lib || []).filter(p => p && !p.deleted); // removed products ride along as tombstones; keep them off the readable tab
   const rows = lib.map(p => {
     const ok = (p.runs || []).filter(r => r.flag === 'ok'); const u = ok.reduce((s, r) => s + r.units, 0), m = ok.reduce((s, r) => s + r.mins, 0);
     const rate = u ? m / u * 60 : (p.setRate ? p.setRate * 60 : '');
