@@ -60,7 +60,9 @@ function loadState_() {
   const out = {};
   for (const k of STATE_KEYS) {
     if (!raw[k]) continue; let js = raw[k].js; let i = 2; while (raw[k + '#' + i] && raw[k + '#' + i].js) { js += raw[k + '#' + i].js; i++; }
-    try { out[k] = { updated: raw[k].updated, data: js ? JSON.parse(js) : null }; } catch (err) { out[k] = { updated: raw[k].updated, data: null }; }
+    try { out[k] = { updated: raw[k].updated, data: js ? JSON.parse(js) : null }; }
+    catch (err) { // stale chunk rows from an earlier, larger save can be glued on; fall back to the first cell alone
+      try { out[k] = { updated: raw[k].updated, data: raw[k].js ? JSON.parse(raw[k].js) : null }; } catch (err2) { out[k] = { updated: raw[k].updated, data: null }; } }
   }
   return out;
 }
@@ -75,6 +77,7 @@ function saveState_(state) {
     const row = idx[k] || sh.getLastRow() + 1;
     sh.getRange(row, 1, 1, 3).setValues([[k, now, js]]);
     idx[k] = row;
+    clearChunks_(sh, k, 2, idx); // a save that fits in one cell must drop any chunks left from a bigger save
   }
   if ('library' in state) writeLibrarySheets_(state.library || []);
   if ('issues' in state) writeIssuesSheet_(state.issues || []);
@@ -84,9 +87,9 @@ function saveState_(state) {
 function writeChunked_(sh, k, js, now, idx) {
   const parts = js.match(/[\s\S]{1,45000}/g);
   parts.forEach((p, i) => { const kk = i === 0 ? k : k + '#' + (i + 1); const row = idx[kk] || sh.getLastRow() + 1; sh.getRange(row, 1, 1, 3).setValues([[kk, now, p]]); idx[kk] = row; });
-  // clear stale extra chunks
-  let i = parts.length + 1; while (idx[k + '#' + i]) { sh.getRange(idx[k + '#' + i], 3).setValue(''); i++; }
+  clearChunks_(sh, k, parts.length + 1, idx);
 }
+function clearChunks_(sh, k, from, idx) { let i = from; while (idx[k + '#' + i]) { sh.getRange(idx[k + '#' + i], 2, 1, 2).setValues([['', '']]); i++; } }
 // ── readable sheets ────────────────────────────────────────────────────────
 function rewrite_(name, header, rows) {
   const ss = SpreadsheetApp.getActiveSpreadsheet(); let sh = ss.getSheetByName(name); if (!sh) sh = ss.insertSheet(name);
