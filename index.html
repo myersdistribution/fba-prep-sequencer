@@ -589,7 +589,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.19.0-stacks';
+const VERSION='2.19.1-order';
 const BUILD='2026-10-20';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1467,36 +1467,63 @@ function buildPlan(){ plan_endFilm=null;
     const cands=[capI>=0?capI+2:Infinity,otherI>=0?otherI+1:Infinity,P.fill.length?P.layers.length+1:Infinity]; const cf=Math.min(...cands); P.creativeFrom=isFinite(cf)?Math.min(cf,P.layers.length+1):0; }
   const fitLevel=(level<LEVELS.length?LEVELS[level].name+(mode==='sequential'?' · sequential':''):'unplaced')+(target>target0?` (+${target-target0} pallet${target-target0>1?'s':''} over minimum)`:'');
   pallets.forEach(P=>{ P.boxes=P.layers.reduce((s,L)=>s+L.boxes,0); P.partials=P.layers.filter(L=>L.kind!=='full').length; const prods=new Set(P.layers.flatMap(L=>L.comp.map(c=>c.p.id))); const grps=new Set(P.layers.map(L=>L.group)); P.whole=prods.size===1?P.layers[0].comp[0].p.name.slice(0,40):(grps.size===1?P.layers[0].group:null); });
-  // numbering: fullest and cleanest first (big single-product stacks), leftovers last
-  pallets.sort((a,b)=>(a.partials-b.partials)*30+(b.boxes-a.boxes)||b.wt-a.wt);
-  pallets.forEach((P,i)=>{P.n=i+1;P.layers.forEach((L,j)=>{L.pallet=i+1;L.idx=j+1;});});
-  // prep runs: per product, per layer destination; grouped by setup
-  const runs=[]; 
-  for(const P of pallets){ for(const L of P.layers) for(const c of L.comp){ const units=c.p.a.perbox===1?c.boxes:c.boxes*c.p.upc; runs.push({p:c.p,setup:setupOf(c.p),boxes:c.boxes,units,pallet:P.n,layer:L.idx,layerKey:L.group,inGap:!!c.inGap}); }
-    for(const F of P.fill){ const tot=F.comp.reduce((s,c)=>s+c.boxes,0); for(const c of F.comp){ const bx=Math.max(1,Math.round(c.boxes*F.boxes/tot)); const units=c.p.a.perbox===1?bx:bx*c.p.upc; runs.push({p:c.p,setup:setupOf(c.p),boxes:bx,units,pallet:P.n,layer:P.layers.length+1,layerKey:'hand-fit'}); } } }
-  // sequence: shrink runs are the only real changeover (film roll). Sticker / stickerless / 3-in-1 are free and
-  // interleave around the shrink block so the heat tunnel runs once and isn't left idle.
+  // ── prep runs + pallet numbering ──
+  // Runs are per product per layer. The sequence is product-by-product (one run = one product, all its boxes), walked
+  // pallet by pallet: products are ordered by their home pallet (where most of their boxes go), then by layer, so one
+  // pallet closes before the next opens wherever the film changeovers allow. Pallets are then numbered in the order the
+  // sequence finishes them — P1 is the first pallet you wrap. Gap fills are their own small runs, right after the
+  // layers they sit in, because a gap can't be filled once more layers are on.
+  pallets.forEach((P,i)=>{ P.tmp=i; });
+  const runs=[];
+  for(const P of pallets){ P.layers.forEach((L,j)=>{ L.idx=j+1; for(const c of L.comp){ const units=c.p.a.perbox===1?c.boxes:c.boxes*c.p.upc; runs.push({p:c.p,setup:setupOf(c.p),boxes:c.boxes,units,P,L,layer:L.idx,layerKey:L.group,inGap:!!c.inGap}); } });
+    for(const F of P.fill){ const tot=F.comp.reduce((s,c)=>s+c.boxes,0); for(const c of F.comp){ const bx=Math.max(1,Math.round(c.boxes*F.boxes/tot)); const units=c.p.a.perbox===1?bx:bx*c.p.upc; runs.push({p:c.p,setup:setupOf(c.p),boxes:bx,units,P,L:null,layer:P.layers.length+1,layerKey:'hand-fit'}); } } }
   const prepped=shipment.prepped||{}; runs.forEach(r=>{ const pu=prepped[r.p.id]||0; r.done=pu>=(shipment.lines.find(l=>l.id===r.p.id)||{}).units; r.partPrepped=!r.done&&pu>0?pu:0; });
   const isShrink=s=>s.startsWith('shrink');
   const mergeRuns=rs=>{const m=[];for(const r of rs){const e=m.find(x=>x.p===r.p);if(e){e.boxes+=r.boxes;e.units+=r.units;e.dest.push(r);}else m.push({p:r.p,setup:r.setup,boxes:r.boxes,units:r.units,dest:[r],done:r.done,partPrepped:r.partPrepped});}return m;};
-  const minL=m=>{ const ds=m.dest.filter(d=>!d.inGap); return Math.min(...(ds.length?ds:m.dest).map(d=>d.layer)); };
-  const byLayer=(a,b)=>((b.p.a.base?1:0)-(a.p.a.base?1:0))||minL(a)-minL(b)||b.boxes-a.boxes;
-  const nonShrink=mergeRuns(runs.filter(r=>!isShrink(r.setup)||r.done)).sort(byLayer);
-  const films=[...new Set(runs.filter(r=>isShrink(r.setup)&&!r.done).map(r=>r.setup))];
-  const loaded='shrink-'+settings.film; const shrinkBlocks=films.map(f=>mergeRuns(runs.filter(r=>r.setup===f&&!r.done)).sort(byLayer)).sort((A,B)=>(A[0].setup===loaded?-1:B[0].setup===loaded?1:0)||Math.min(...A.map(minL))-Math.min(...B.map(minL)));
-  // non-shrink runs needed underneath a shrink layer on the same pallet go first (they also cover the warm-up); the rest follow the shrink block
-  const shrinkTop={}; runs.filter(r=>isShrink(r.setup)&&!r.done).forEach(r=>{shrinkTop[r.pallet]=Math.max(shrinkTop[r.pallet]||0,r.layer);});
-  const before=nonShrink.filter(m=>m.dest.some(d=>d.layer<(shrinkTop[d.pallet]||0))), after=nonShrink.filter(m=>!before.includes(m));
-  const seq=[]; const built={};
-  const push=m=>{ m.staged=false; m.dest.slice().sort((a,b)=>a.pallet-b.pallet||a.layer-b.layer).forEach(d=>{ if(d.inGap) return; if(!m.p.a.base&&d.layer>((built[d.pallet]||0)+1)) m.staged=true; built[d.pallet]=Math.max(built[d.pallet]||0,d.layer); }); seq.push(m); };
-  before.forEach(push);
-  if(shrinkBlocks.length){ seq.push({note:'heat',text:`Turn on the heat tunnel now — about ${settings.warmup} min to warm up before the first shrink run`}); if(shrinkBlocks[0][0].setup!==loaded) seq.push({note:'film',text:`Change film roll → ${SETUP_LABEL[shrinkBlocks[0][0].setup]} (${settings.film?settings.film+'" loaded now':'none loaded'})`});
-    shrinkBlocks.forEach((blk,i)=>{ if(i>0) seq.push({note:'film',text:`Change film roll → ${SETUP_LABEL[blk[0].setup]}`}); seq.push({note:'setup',text:SETUP_LABEL[blk[0].setup]}); blk.forEach(push); });
-    seq.push({note:'heat',text:'Shrink work done — switch off the heat tunnel'}); plan_endFilm=shrinkBlocks[shrinkBlocks.length-1][0].setup.replace('shrink-',''); }
-  after.forEach(push);
+  const mainRuns=runs.filter(r=>!r.inGap), gapRuns=runs.filter(r=>r.inGap);
+  const homeOf=m=>{ const by=new Map(); m.dest.forEach(d=>by.set(d.P,(by.get(d.P)||0)+d.boxes)); let best=null,bb=-1; for(const [P,b] of by){ if(b>bb||(b===bb&&P.tmp<best.tmp)){best=P;bb=b;} } return best; };
+  const minLOn=(m,P)=>Math.min(...m.dest.filter(d=>d.P===P).map(d=>d.layer));
+  const order=ms=>ms.sort((a,b)=>{ const ha=homeOf(a), hb=homeOf(b); return (ha.tmp-hb.tmp)||((b.p.a.base?1:0)-(a.p.a.base?1:0))||(minLOn(a,ha)-minLOn(b,hb))||(b.boxes-a.boxes); });
+  const loaded='shrink-'+settings.film;
+  const buildSeq=()=>{
+    const nonShrink=order(mergeRuns(mainRuns.filter(r=>!isShrink(r.setup)||r.done)));
+    const films=[...new Set(mainRuns.filter(r=>isShrink(r.setup)&&!r.done).map(r=>r.setup))];
+    const blocks=films.map(f=>order(mergeRuns(mainRuns.filter(r=>r.setup===f&&!r.done)))).sort((A,B)=>(A[0].setup===loaded?-1:B[0].setup===loaded?1:0)||(homeOf(A[0]).tmp-homeOf(B[0]).tmp));
+    // non-shrink runs needed underneath a shrink layer on the same pallet go first (they also cover the warm-up); the rest follow the shrink block
+    const shrinkTop=new Map(); mainRuns.filter(r=>isShrink(r.setup)&&!r.done).forEach(r=>shrinkTop.set(r.P,Math.max(shrinkTop.get(r.P)||0,r.layer)));
+    const needsShrinkGap=m=>m.dest.some(d=>d.L&&gapRuns.some(g=>g.L===d.L&&isShrink(g.setup)&&!g.done)); // its gaps get shrink-wrapped boxes, so build it before the film goes on
+    const before=nonShrink.filter(m=>m.dest.some(d=>d.layer<(shrinkTop.get(d.P)||0))||needsShrinkGap(m)), after=nonShrink.filter(m=>!before.includes(m));
+    const seq=[]; const built=new Map(); const gapDone=new Set(); const deferred={}; let curFilm=null; // deferred: gap runs that need a film roll not loaded yet, keyed by setup
+    const push=m=>{ m.staged=false; m.dest.slice().sort((a,b)=>a.P.tmp-b.P.tmp||a.layer-b.layer).forEach(d=>{ if(!m.p.a.base&&d.layer>((built.get(d.P)||0)+1)) m.staged=true; built.set(d.P,Math.max(built.get(d.P)||0,d.layer)); }); seq.push(m);
+      // gap fills for the layers this run just built: one small run per filler product, done now while the gap is reachable —
+      // unless the filler needs a different film roll, in which case it opens that film block (still before anything covers the gap)
+      const hostLayers=new Set(m.dest.map(d=>d.L).filter(Boolean)); const gs=gapRuns.filter(g=>hostLayers.has(g.L)&&!gapDone.has(g)); gs.forEach(g=>gapDone.add(g));
+      mergeRuns(gs).forEach(gm=>{ gm.gapFill=true; gm.gapFor=m.p; if(isShrink(gm.setup)&&gm.setup!==curFilm&&!gm.done){ (deferred[gm.setup]=deferred[gm.setup]||[]).push(gm); gm.deferred=true; } else seq.push(gm); }); };
+    const flushGaps=f=>{ const merged=[]; (deferred[f]||[]).forEach(gm=>{ const e=merged.find(x=>x.p===gm.p); if(e){ e.boxes+=gm.boxes; e.units+=gm.units; e.dest.push(...gm.dest); e.gapFor=null; } else merged.push(gm); }); merged.forEach(gm=>seq.push(gm)); delete deferred[f]; };
+    before.forEach(push);
+    if(blocks.length){ seq.push({note:'heat',text:`Turn on the heat tunnel now — about ${settings.warmup} min to warm up before the first shrink run`}); if(blocks[0][0].setup!==loaded) seq.push({note:'film',text:`Change film roll → ${SETUP_LABEL[blocks[0][0].setup]} (${settings.film?settings.film+'" loaded now':'none loaded'})`});
+      blocks.forEach((blk,i)=>{ if(i>0) seq.push({note:'film',text:`Change film roll → ${SETUP_LABEL[blk[0].setup]}`}); seq.push({note:'setup',text:SETUP_LABEL[blk[0].setup]}); curFilm=blk[0].setup; flushGaps(curFilm); blk.forEach(push); });
+      curFilm=null;
+      seq.push({note:'heat',text:'Shrink work done — switch off the heat tunnel'}); plan_endFilm=blocks[blocks.length-1][0].setup.replace('shrink-',''); }
+    after.forEach(push);
+    for(const f of Object.keys(deferred)){ seq.push({note:'film',text:`Change film roll → ${SETUP_LABEL[f]} (gap fills)`}); flushGaps(f); films.push(f); plan_endFilm=f.replace('shrink-',''); }
+    // any gap fill whose host run was pre-staged still needs doing: append
+    const leftover=gapRuns.filter(g=>!gapDone.has(g)); if(leftover.length) mergeRuns(leftover).forEach(gm=>{ gm.gapFill=true; seq.push(gm); });
+    return {seq,films,blocks};
+  };
+  // pass 1 with the provisional (fullest-first) order → number pallets by when the sequence finishes them → pass 2 in that order
+  pallets.forEach(P=>{ P.nProd=new Set(P.layers.flatMap(L=>L.comp.filter(c=>!c.inGap).map(c=>c.p.id))).size; });
+  pallets.sort((a,b)=>(a.nProd-b.nProd)||(a.partials-b.partials)||(b.boxes-a.boxes)||b.wt-a.wt); pallets.forEach((P,i)=>{P.tmp=i;}); // cleanest first: solid stacks open before mixed ones
+  let built1=buildSeq(); { const fin=new Map(), sum=new Map(), cnt=new Map(); let i=0; built1.seq.forEach(m=>{ if(m.note) return; i++; m.dest.forEach(d=>{ fin.set(d.P,i); sum.set(d.P,(sum.get(d.P)||0)+i*d.boxes); cnt.set(d.P,(cnt.get(d.P)||0)+d.boxes); }); });
+    const mean=P=>cnt.get(P)?sum.get(P)/cnt.get(P):1e9;
+    pallets.sort((a,b)=>(fin.get(a)??1e9)-(fin.get(b)??1e9)||mean(a)-mean(b)||a.nProd-b.nProd||b.boxes-a.boxes); pallets.forEach((P,i)=>{P.tmp=i;}); }
+  const {seq,films,blocks:shrinkBlocks}=buildSeq();
+  pallets.forEach((P,i)=>{ P.n=i+1; P.layers.forEach((L,j)=>{ L.pallet=i+1; L.idx=j+1; }); });
+  runs.forEach(r=>{ r.pallet=r.P.n; });
+  seq.forEach(m=>{ if(!m.note) m.dest.sort((a,b)=>a.pallet-b.pallet||a.layer-b.layer); });
+  const filmChanges=(films.length?(shrinkBlocks[0][0].setup===loaded?0:1):0)+Math.max(0,films.length-1);
   const setups=[...new Set(runs.map(r=>r.setup))];
   const endFilm=typeof plan_endFilm!=='undefined'?plan_endFilm:null;
-  const filmChanges=(films.length?(shrinkBlocks[0][0].setup===loaded?0:1):0)+Math.max(0,films.length-1);
   return {pallets,unplaced,seq,setups,films,changeovers:filmChanges,endFilm,usable,minPallets,target,fitLevel,level};
 }
 function renderPallets(){
@@ -1536,7 +1563,7 @@ function renderPrep(){
   for(const r of plan.seq){
     if(r.note){ if(r.note==='heat'&&heatAt!=null&&r.text.startsWith('Turn on')) r.text=`Turn on the heat tunnel about ${fmtMin(Math.max(0,heatAt-settings.warmup))} into the day (${settings.warmup} min warm-up before the first shrink run)`; const col=r.note==='film'?'var(--warn)':r.note==='heat'?'var(--danger)':'var(--accent2)'; html+=`<div class="setup-hd" style="color:${col}"><span>${r.note==='heat'?'🔥 ':r.note==='film'?'⟲ ':'▶ '}${esc(r.text)}</span></div>`; continue; }
     n++; const em=r.done?null:minsForBoxes(r.p,r.boxes); if(em!=null) clock+=em;
-    html+=`<div class="run ${r.done?'done':''}"><div class="n">${n}</div><div style="flex:1"><div>${esc(r.p.name)} ${r.p.loc?`<span class="pill">${esc(r.p.loc)}</span>`:''}<span class="mono muted">· ${r.units} units · ${r.boxes} boxes${r.done?' · <span style="color:var(--accent2)">already prepped — stack from staging</span>':em!=null?` · ~${fmtMin(em)} prep${rateOf(r.p).dflt?' (default)':rateOf(r.p).manual?' (set)':''}`:' · <span style="color:var(--warn)">no rate yet</span>'}${atOf.has(r)?` · done ~<span style="color:var(--accent)">${fmtClock(anchor+atOf.get(r))}</span>`:''}${r.partPrepped?` · <span style="color:var(--accent2)">${r.partPrepped} pre-prepped</span>`:''}</span> <span class="pill prep">${esc(prepLabel(r.p.a.prep))}</span>${r.staged?' <span class="pill flag">staged</span>':''}</div>
+    html+=`<div class="run ${r.done?'done':''}"><div class="n">${n}</div><div style="flex:1"><div>${r.gapFill?`<span class="pill" style="border-color:var(--warn);color:var(--warn)">gap fill${r.deferred?' first — before anything goes on':' — do now'}${r.gapFor?', into the '+esc(r.gapFor.name.replace(/\s*\(Pack.*$/,'').slice(0,30))+' layers':', into the gap columns'}</span> `:''}${esc(r.p.name)} ${r.p.loc?`<span class="pill">${esc(r.p.loc)}</span>`:''}<span class="mono muted">· ${r.units} units · ${r.boxes} boxes${r.done?' · <span style="color:var(--accent2)">already prepped — stack from staging</span>':em!=null?` · ~${fmtMin(em)} prep${rateOf(r.p).dflt?' (default)':rateOf(r.p).manual?' (set)':''}`:' · <span style="color:var(--warn)">no rate yet</span>'}${atOf.has(r)?` · done ~<span style="color:var(--accent)">${fmtClock(anchor+atOf.get(r))}</span>`:''}${r.partPrepped?` · <span style="color:var(--accent2)">${r.partPrepped} pre-prepped</span>`:''}</span> <span class="pill prep">${esc(prepLabel(r.p.a.prep))}</span>${r.staged?' <span class="pill flag">staged</span>':''}</div>
       <div class="dest">${(()=>{ const byP={}; r.dest.forEach(d=>{(byP[d.pallet]=byP[d.pallet]||[]).push(d);}); return Object.keys(byP).map(n=>{ const ds=byP[n]; const P=plan.pallets.find(x=>x.n==n); const whole=P&&P.whole&&P.layers.every(L=>L.comp.every(c=>c.p===r.p)); return `<span class="pill" style="border-color:${palColor(+n)};color:${palColor(+n)}">P${n}${whole?' · whole pallet':' '+ds.map(d=>`L${d.layer}${d.inGap?' gap':''} (${d.boxes})`).join(' ')}</span>`; }).join(' '); })()}</div><div class="row" style="margin-top:6px;align-items:center">${prepTimerHtml(r).replace('<div style="margin-top:6px">','<div>')}<button class="btn" style="padding:5px 10px;${r.done?'color:var(--accent2)':''}" onclick="markPrepped('${r.p.id}'${r.done?',0':''})">${r.done?'✓ Staged':'Mark prepped'}</button>${trainBtn(r.p.id)}<button class="btn" style="padding:5px 10px;color:var(--danger)" onclick="openIssue('${r.p.id}',${r.units},'${esc(r.dest.map(d=>'P'+d.pallet+' L'+d.layer).join(', '))}')">⚑ Report issue</button></div></div></div>`; }
   if(plan.endFilm) html+=`<div class="row" style="margin-top:10px;justify-content:flex-end"><span class="help">This plan ends with ${plan.endFilm}" film loaded.</span><button class="btn" onclick="markFilm('${plan.endFilm}')">Shipment done → ${plan.endFilm}" is loaded now</button></div>`;
   el.innerHTML=html+'</div>';
