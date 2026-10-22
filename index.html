@@ -186,6 +186,7 @@ body.touch .dest{font-size:13px}
     <button class="tab" data-tab="settings" onclick="switchTab('settings')">Settings</button>
   </div>
 
+  <div id="update-bar" style="display:none;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:10px 12px;border-radius:6px;background:rgba(240,180,41,.12);border:1px solid rgba(240,180,41,.5);font-size:13px"></div>
   <div id="feedback" class="feedback"></div>
   <div id="toast" class="feedback" style="position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:70;max-width:min(92vw,560px);margin:0;box-shadow:0 6px 24px rgba(0,0,0,.5);background:var(--surface)"></div>
 
@@ -592,7 +593,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.20.4-patterns';
+const VERSION='2.20.5-patterns';
 const BUILD='2026-10-21';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1613,6 +1614,9 @@ function saveSettings(){for(const k of ['pl','pw','ph','pd','pwt','tol','frag','
 function exportLibrary(){const blob=new Blob([JSON.stringify(library,null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='fba-library.json';a.click();}
 async function resetToSeed(){if(!await ask('Replace the library with the built-in seed?',{ok:'Reset'}))return; store.del('library'); loadLibrary(); renderAll(); feedback('Library reset to built-in seed','ok');}
 async function wipeAll(){if(!await ask('Clear all local data in this browser?',{ok:'Wipe'}))return; ['library','shipment','settings','librarySource'].forEach(store.del); location.reload();}
+let updateSeen=null;
+async function checkForUpdate(){ if(location.protocol==='file:'||location.hostname.includes('claude')) return; try{ const r=await fetch(location.pathname+'?u='+Date.now(),{cache:'no-store'}); const t=await r.text(); const m=t.match(/const VERSION='([^']+)'/); if(!m||m[1]===VERSION||m[1]===updateSeen) return; updateSeen=m[1];
+    const el=document.getElementById('update-bar'); el.innerHTML=`<span>A newer build is live — <b>v${esc(m[1])}</b> (this is v${esc(VERSION)}).</span><button class="btn btn-primary" onclick="location.reload()">Update now</button>`; el.style.display='flex'; }catch(e){} }
 function feedback(msg,cls){const el=document.getElementById('feedback');el.textContent=msg;el.className='feedback '+cls;clearTimeout(el._t);el._t=setTimeout(()=>{el.className='feedback';},cls==='err'?12000:7000);
   const modalOpen=['train-modal','edit-modal','issue-modal','ask-modal','photo-view'].some(id=>{const m=document.getElementById(id);return m&&!m.classList.contains('hidden');}); const t=document.getElementById('toast'); if(t){ if(modalOpen){ t.textContent=msg; t.className='feedback '+cls; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(()=>{t.className='feedback';t.style.display='none';},cls==='err'?12000:5000); } else { t.className='feedback'; t.style.display='none'; } } }
 function switchTab(t){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));['library','groups','shipment','pallets','prep','training','timing','issues','log','settings'].forEach(k=>document.getElementById('tab-'+k).classList.toggle('hidden',k!==t));window.scrollTo({top:0});}
@@ -1626,7 +1630,9 @@ function renderAll(){renderLibrary();renderGroups();renderShipment();renderPalle
   loadLibrary(); shipment=store.get('shipment',null); issues=store.get('issues',[]); timer=store.get('timer',null); training=store.get('training',{cards:{}}); if(!training.cards) training={cards:{}};
   document.getElementById('subtitle').innerHTML=`v${VERSION} · build ${BUILD}<span id="foot-mode"></span>`;
   document.getElementById('footer').textContent=`FBA PREP SEQUENCER v${VERSION} · BUILD ${BUILD} · ${library.length} PRODUCTS`;
-  renderAll(); if(syncEnabled()) syncPull(); document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&syncEnabled()&&Date.now()-syncState.lastPull>60000) syncPull(); });
+  renderAll(); if(syncEnabled()) syncPull(); document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&syncEnabled()&&Date.now()-syncState.lastPull>60000) syncPull(); if(!document.hidden) checkForUpdate(); });
+  // GitHub Pages lets browsers keep this file for 10 minutes; ask for the live copy and offer a reload when a newer build is up
+  setTimeout(checkForUpdate,15000); setInterval(checkForUpdate,120000);
 })();
 </script>
 </body>
