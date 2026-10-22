@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.23.4-shift';
+const VERSION='2.23.5-shift';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1484,6 +1484,10 @@ function buildPlan(){ plan_endFilm=null;
       if(L.base&&L.kind!=='full'){ const same=P.layers.filter(x=>x.base&&x.group===L.group).length; const sameProd=P.layers.some(x=>x.comp.some(c=>L.comp.some(d=>d.p===c.p))); if(same>0) return 1.5+(sameProd?0.6:0)+bal; return (P.layers.length===0?-0.5:-1)+bal; }
       // any other full layer: stay with its group where one is already started (fewer splits, one product = one stack), else balance
       if(L.kind==='full'){ const same=P.layers.filter(x=>x.group===L.group&&x.kind==='full').length; if(same>0) return 1.5+same*0.05+bal; }
+      // leftovers: join an open part layer on another pallet (side by side on one level) rather than perching alone on top of a clean stack
+      if(L.kind!=='full'&&!L.topoff&&f.idx===P.layers.length){ const top=P.layers[P.layers.length-1];
+        if(top&&top.kind!=='full'&&!top.topoff&&!top.base&&!L.base&&((top.fill||0)+(L.fill||0))<=0.92&&!(top.fragile&&L.wt>settings.frag)&&!(L.fragile&&top.wt>settings.frag)) return 2.5+bal;
+        const prods=new Set(P.layers.flatMap(x=>x.comp.filter(c=>!c.inGap).map(c=>c.p.id))); if((L.fill||0)<0.35&&prods.size===1&&P.layers.length>=3) return bal-1.2; }
       // leftovers ride with the pallet that already carries the same product (one place to find it, one label)
       const sameProd=P.layers.some(x=>x.comp.some(c=>L.comp.some(d=>d.p===c.p))); return bal+(sameProd?0.4:0); };
     const putOn=(P,L,idx)=>{ P.layers.splice(idx,0,L); P.h+=L.h; P.wt+=L.wt;
