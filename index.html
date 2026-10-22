@@ -433,9 +433,10 @@ body.touch .dest{font-size:13px}
   <div id="three-modal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:56;display:flex;align-items:center;justify-content:center;padding:12px">
     <div class="card" style="width:100%;max-width:520px;margin:0">
       <div class="card-title"><span id="three-title">Pallet</span><button class="btn" onclick="close3d()">✕</button></div>
+      <div id="three-nav" class="row" style="margin-bottom:6px;gap:6px"></div>
       <div id="three-wrap" style="width:100%;border-radius:8px;overflow:hidden"></div>
       <div class="row" style="margin-top:8px;align-items:center;justify-content:space-between"><span class="row"><button class="btn" onclick="rot3d(-1)">⟲ Rotate</button><button class="btn" onclick="rot3d(1)">Rotate ⟳</button></span><span id="three-legend"></span></div>
-      <div class="help" style="margin-top:8px">Faded boxes are overflow the grid couldn't place cleanly; gap fillers sit in the strip.</div>
+      <div class="help" style="margin-top:8px">Opened from a prep run, the lit boxes are that run and the grey ones are what's already on the pallet. Faded boxes are overflow the grid couldn't place cleanly; gap fillers sit in the strip.</div>
     </div>
   </div>
 
@@ -591,7 +592,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.20.0-patterns';
+const VERSION='2.20.3-patterns';
 const BUILD='2026-10-21';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1227,21 +1228,31 @@ function layerSvg(L,size=170){ const PL=settings.pl,PW=settings.pw; const sc=siz
 function paletteLegend(plan){ const names=[...new Set(plan.pallets.flatMap(P=>P.layers.flatMap(L=>L.comp.map(c=>c.p.a.box||c.p.name))))]; return names.map(n=>`<span class="pill" style="border-color:${groupColor(n)};color:${groupColor(n)}">${esc(n.slice(0,22))}</span>`).join(' '); }
 // ── 3D view (isometric SVG, no WebGL) ──
 let iso={n:null,angle:0};
-function open3d(n){ iso.n=n; iso.angle=0; document.getElementById('three-modal').classList.remove('hidden'); draw3d(); }
+function open3d(n,focus){ iso.n=n; iso.angle=0; iso.focus=focus||null; document.getElementById('three-modal').classList.remove('hidden'); draw3d(); }
+// from a prep run: show where this product's boxes go — its boxes lit, everything else ghosted; pallet buttons when the run spans several
+function openRun3d(pid){ const plan=buildPlan(); if(!plan) return; const m=plan.seq.find(r=>!r.note&&r.p.id===pid&&!r.gapFill)||plan.seq.find(r=>!r.note&&r.p.id===pid); if(!m) return;
+  const byP={}; m.dest.forEach(d=>{ (byP[d.pallet]=byP[d.pallet]||new Set()).add(d.layer); }); const pallets=Object.keys(byP).map(Number).sort((a,b)=>a-b);
+  open3d(pallets[0],{pid,byP,pallets,name:m.p.name}); }
+function focusPallet(n){ if(!iso.focus) return; iso.n=n; draw3d(); }
 function rot3d(d){ iso.angle=(iso.angle+d+4)%4; draw3d(); }
-function close3d(){ document.getElementById('three-modal').classList.add('hidden'); iso.n=null; }
+function close3d(){ document.getElementById('three-modal').classList.add('hidden'); iso.n=null; iso.focus=null; }
 function shade(hex,f){ const c=parseInt(hex.slice(1),16); const r=Math.round(((c>>16)&255)*f),g=Math.round(((c>>8)&255)*f),b=Math.round((c&255)*f); return `rgb(${r},${g},${b})`; }
 function draw3d(){ const plan=buildPlan(); const P=plan&&plan.pallets.find(x=>x.n===iso.n); if(!P) return;
-  document.getElementById('three-title').textContent=`Pallet ${P.n} · ${P.layers.length} layers · ${(P.h+settings.pd).toFixed(1)}" · ~${Math.round(grossWt(P.wt))} lb`;
+  document.getElementById('three-title').textContent=iso.focus?`${iso.focus.name.slice(0,36)} → Pallet ${P.n}${iso.focus.pallets.length>1?' (and '+iso.focus.pallets.filter(x=>x!==P.n).map(x=>'P'+x).join(', ')+')':''}`:`Pallet ${P.n} · ${P.layers.length} layers · ${(P.h+settings.pd).toFixed(1)}" · ~${Math.round(grossWt(P.wt))} lb`;
+  { const nav=document.getElementById('three-nav'); if(nav) nav.innerHTML=iso.focus&&iso.focus.pallets.length>1?iso.focus.pallets.map(n=>`<button class="btn" style="padding:5px 10px;${n===P.n?'background:var(--accent);color:#0f1117':''}" onclick="focusPallet(${n})">P${n} · L${[...iso.focus.byP[n]].sort((a,b)=>a-b).join(', L')}</button>`).join(''):(iso.focus?`<span class="help">layers L${[...(iso.focus.byP[P.n]||[])].sort((a,b)=>a-b).join(', L')} — lit boxes are this run; the rest is what's already on the pallet</span>`:''); }
   const PL=settings.pl,PW=settings.pw,PD=settings.pd; const boxes=[{x:0,y:0,z:0,w:PL,l:PW,h:PD,color:'#8a6a3a',deck:true}];
-  let z=PD; for(const L of P.layers){ for(const b of layoutLayer(L)){ if(b.strip) continue; const h=b.h||L.h; const lift=b.inGap?(b.stackN||0)*h:0; boxes.push({x:b.x,y:b.y,z:z+lift,w:b.w,l:b.l,h,color:groupColor(b.p.a.box||b.p.name),over:b.over,inGap:b.inGap}); } z+=L.h; }
+  const F=iso.focus; const lit=F?(F.byP[P.n]||new Set()):null;
+  let z=PD; for(const L of P.layers){ for(const b of layoutLayer(L)){ if(b.strip) continue; const h=b.h||L.h; const lift=b.inGap?(b.stackN||0)*h:0; const ghost=F&&!(lit.has(L.idx)&&b.p.id===F.pid); boxes.push({x:b.x,y:b.y,z:z+lift,w:b.w,l:b.l,h,color:ghost?'#3a3f55':groupColor(b.p.a.box||b.p.name),over:b.over,inGap:b.inGap,ghost}); } z+=L.h; }
   // rotate footprint by quarter turns
   const rot=b=>{ let {x,y,w,l}=b; for(let i=0;i<iso.angle;i++){ const nx=y, ny=PL-x-w; const nw=l, nl=w; x=nx;y=ny;w=nw;l=nl; [PLr,PWr]=[PWr,PLr]; } return {...b,x,y,w,l}; };
   let PLr=PL,PWr=PW; const bs=boxes.map(rot); PLr=iso.angle%2?PW:PL; PWr=iso.angle%2?PL:PW;
   // isometric projection: screen x = (x - y)*cos30, screen y = (x + y)*sin30 - z
   const c30=0.866,s30=0.5; const pr=(x,y,zz)=>[(x-y)*c30,(x+y)*s30-zz];
-  bs.sort((a,b)=>(a.x+a.y+a.z)-(b.x+b.y+b.z)||a.z-b.z);
-  const polys=[]; for(const b of bs){ const [x0,y0,z0]=[b.x,b.y,b.z], x1=b.x+b.w, y1=b.y+b.l, z1=b.z+b.h; const op=b.over?0.45:b.deck?1:0.95;
+  // painter's order: box A goes under B when A is wholly behind it on any axis (the viewer looks from +x, +y, above)
+  const n=bs.length, before=(A,B)=>A.x+A.w<=B.x+1e-6||A.y+A.l<=B.y+1e-6||A.z+A.h<=B.z+1e-6; const order=[], state=new Array(n).fill(0);
+  const visit=i=>{ if(state[i]) return; state[i]=1; for(let j=0;j<n;j++){ if(j!==i&&!state[j]&&before(bs[j],bs[i])&&!before(bs[i],bs[j])) visit(j); } state[i]=2; order.push(bs[i]); };
+  bs.sort((a,b)=>(a.x+a.y+a.z)-(b.x+b.y+b.z)); for(let i=0;i<n;i++) visit(i); bs.length=0; bs.push(...order);
+  const polys=[]; for(const b of bs){ const [x0,y0,z0]=[b.x,b.y,b.z], x1=b.x+b.w, y1=b.y+b.l, z1=b.z+b.h; const op=b.ghost?0.28:b.over?0.45:b.deck?1:0.95;
     const top=[pr(x0,y0,z1),pr(x1,y0,z1),pr(x1,y1,z1),pr(x0,y1,z1)], right=[pr(x1,y0,z0),pr(x1,y1,z0),pr(x1,y1,z1),pr(x1,y0,z1)], front=[pr(x0,y1,z0),pr(x1,y1,z0),pr(x1,y1,z1),pr(x0,y1,z1)];
     const pg=(pts,fill)=>`<polygon points="${pts.map(p=>p.map(v=>v.toFixed(1)).join(',')).join(' ')}" fill="${fill}" fill-opacity="${op}" stroke="#0f1117" stroke-width="0.35"/>`;
     polys.push(pg(top,shade(b.color,1)),pg(right,shade(b.color,0.72)),pg(front,shade(b.color,0.55))); }
@@ -1552,7 +1563,7 @@ function renderPallets(){
   const maps=document.getElementById('pal-maps').checked; document.getElementById('pal-legend').innerHTML=maps?paletteLegend(plan):'';
   el.innerHTML=plan.pallets.map(P=>`<div class="pallet">
     <h3><span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${palColor(P.n)};margin-right:6px"></span>Pallet ${P.n} <button class="btn" style="padding:3px 8px;font-size:10px" onclick="open3d(${P.n})">3D</button>${P.whole?` <span class="pill" style="border-color:${palColor(P.n)};color:${palColor(P.n)}">whole pallet · ${esc(P.whole)}</span>`:''}</span><span class="meta">${P.layers.length} layers · ${P.boxes} boxes · ${(P.h+settings.pd).toFixed(1)}" incl. deck · ~${Math.round(grossWt(P.wt))} lb incl. deck</span></h3>
-    <div class="meta">Height ${Math.round((P.h+settings.pd)/settings.ph*100)}% · Weight ${Math.round(grossWt(P.wt)/settings.pwt*100)}% of limits · <b style="color:var(--accent2)">room: ${(plan.usable-P.h).toFixed(1)}" · ${Math.round(pwtNetG()-P.wt)} lb</b></div>
+    <div class="meta">Height ${Math.round((P.h+settings.pd)/settings.ph*100)}% · Weight ${Math.round((P.wt+(settings.deckWt||0))/settings.pwt*100)}% of limits${settings.margin?` <span class="help">(${Math.round(P.wt+(settings.deckWt||0))} lb planned, ~${Math.round(grossWt(P.wt))} with the ${settings.margin}% safety margin)</span>`:''} · <b style="color:var(--accent2)">room: ${(plan.usable-P.h).toFixed(1)}" · ${Math.round(pwtNetG()-P.wt)} lb</b></div>
     <div class="row" style="margin-top:8px;align-items:flex-end"><div class="field" style="max-width:130px"><label>Actual lb</label><input type="number" value="${(shipment.actual?.[P.n]||{}).wt??''}" onchange="setActual(${P.n},'wt',this.value)"></div><div class="field" style="max-width:130px"><label>Actual height (in)</label><input type="number" step="0.5" value="${(shipment.actual?.[P.n]||{}).h??''}" onchange="setActual(${P.n},'h',this.value)"></div><span class="help">planned ~${Math.round(grossWt(P.wt))} lb · ${(P.h+settings.pd).toFixed(1)}"</span></div>
     <div class="stack"><div class="deck"></div>${P.layers.map(L=>`<div class="layer ${L.kind}${L.fragile?' fragile':''}" style="min-height:${Math.max(28,L.h*4)}px">
       <div><div class="lt">L${L.idx} · <b>${esc(L.group)} · ${L.comp.filter(c=>!c.inGap).reduce((s,c)=>s+c.boxes,0)}</b>${L.comp.filter(c=>!c.inGap).length===1?` <span class="muted">${esc(L.comp.find(c=>!c.inGap).p.name.length>30?L.comp.find(c=>!c.inGap).p.name.slice(0,28)+'…':L.comp.find(c=>!c.inGap).p.name)}</span>`:''}${L.kind==='full'?'':` <span class="pill">${L.kind}${L.fill?` ${Math.round(L.fill*100)}%`:''}</span>`}${L.fragile?'<span class="pill flag">fragile</span>':''}${L.weak?'<span class="pill flag">weak</span>':''}${L.base?'<span class="pill">base · label in place</span>':''}</div>
@@ -1582,7 +1593,7 @@ function renderPrep(){
     if(r.note){ if(r.note==='heat'&&heatAt!=null&&r.text.startsWith('Turn on')) r.text=`Turn on the heat tunnel about ${fmtMin(Math.max(0,heatAt-settings.warmup))} into the day (${settings.warmup} min warm-up before the first shrink run)`; const col=r.note==='film'?'var(--warn)':r.note==='heat'?'var(--danger)':'var(--accent2)'; html+=`<div class="setup-hd" style="color:${col}"><span>${r.note==='heat'?'🔥 ':r.note==='film'?'⟲ ':'▶ '}${esc(r.text)}</span></div>`; continue; }
     n++; const em=r.done?null:minsForBoxes(r.p,r.boxes); if(em!=null) clock+=em;
     html+=`<div class="run ${r.done?'done':''}"><div class="n">${n}</div><div style="flex:1"><div>${r.gapFill?`<span class="pill" style="border-color:var(--warn);color:var(--warn)">gap fill${r.deferred?' first — before anything goes on':' — do now'}${r.gapFor?', into the '+esc(r.gapFor.name.replace(/\s*\(Pack.*$/,'').slice(0,30))+' layers':', into the gap columns'}</span> `:''}${esc(r.p.name)} ${r.p.loc?`<span class="pill">${esc(r.p.loc)}</span>`:''}<span class="mono muted">· ${r.units} units · ${r.boxes} boxes${r.done?' · <span style="color:var(--accent2)">already prepped — stack from staging</span>':em!=null?` · ~${fmtMin(em)} prep${rateOf(r.p).dflt?' (default)':rateOf(r.p).manual?' (set)':''}`:' · <span style="color:var(--warn)">no rate yet</span>'}${atOf.has(r)?` · done ~<span style="color:var(--accent)">${fmtClock(anchor+atOf.get(r))}</span>`:''}${r.partPrepped?` · <span style="color:var(--accent2)">${r.partPrepped} pre-prepped</span>`:''}</span> <span class="pill prep">${esc(prepLabel(r.p.a.prep))}</span>${r.staged?' <span class="pill flag">staged</span>':''}</div>
-      <div class="dest">${(()=>{ const byP={}; r.dest.forEach(d=>{(byP[d.pallet]=byP[d.pallet]||[]).push(d);}); return Object.keys(byP).map(n=>{ const ds=byP[n]; const P=plan.pallets.find(x=>x.n==n); const whole=P&&P.whole&&P.layers.every(L=>L.comp.every(c=>c.p===r.p)); return `<span class="pill" style="border-color:${palColor(+n)};color:${palColor(+n)}">P${n}${whole?' · whole pallet':' '+ds.map(d=>`L${d.layer}${d.inGap?' gap':''} (${d.boxes})`).join(' ')}</span>`; }).join(' '); })()}</div><div class="row" style="margin-top:6px;align-items:center">${prepTimerHtml(r).replace('<div style="margin-top:6px">','<div>')}<button class="btn" style="padding:5px 10px;${r.done?'color:var(--accent2)':''}" onclick="markPrepped('${r.p.id}'${r.done?',0':''})">${r.done?'✓ Staged':'Mark prepped'}</button>${trainBtn(r.p.id)}<button class="btn" style="padding:5px 10px;color:var(--danger)" onclick="openIssue('${r.p.id}',${r.units},'${esc(r.dest.map(d=>'P'+d.pallet+' L'+d.layer).join(', '))}')">⚑ Report issue</button></div></div></div>`; }
+      <div class="dest">${(()=>{ const byP={}; r.dest.forEach(d=>{(byP[d.pallet]=byP[d.pallet]||[]).push(d);}); return Object.keys(byP).map(n=>{ const ds=byP[n]; const P=plan.pallets.find(x=>x.n==n); const whole=P&&P.whole&&P.layers.every(L=>L.comp.every(c=>c.p===r.p)); return `<span class="pill" style="border-color:${palColor(+n)};color:${palColor(+n)}">P${n}${whole?' · whole pallet':' '+ds.map(d=>`L${d.layer}${d.inGap?' gap':''} (${d.boxes})`).join(' ')}</span>`; }).join(' '); })()}</div><div class="row" style="margin-top:6px;align-items:center">${prepTimerHtml(r).replace('<div style="margin-top:6px">','<div>')}<button class="btn" style="padding:5px 10px" onclick="openRun3d('${r.p.id}')">▦ Where</button><button class="btn" style="padding:5px 10px;${r.done?'color:var(--accent2)':''}" onclick="markPrepped('${r.p.id}'${r.done?',0':''})">${r.done?'✓ Staged':'Mark prepped'}</button>${trainBtn(r.p.id)}<button class="btn" style="padding:5px 10px;color:var(--danger)" onclick="openIssue('${r.p.id}',${r.units},'${esc(r.dest.map(d=>'P'+d.pallet+' L'+d.layer).join(', '))}')">⚑ Report issue</button></div></div></div>`; }
   if(plan.endFilm) html+=`<div class="row" style="margin-top:10px;justify-content:flex-end"><span class="help">This plan ends with ${plan.endFilm}" film loaded.</span><button class="btn" onclick="markFilm('${plan.endFilm}')">Shipment done → ${plan.endFilm}" is loaded now</button></div>`;
   el.innerHTML=html+'</div>';
 }
