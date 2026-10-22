@@ -595,7 +595,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.21.4-gapinside';
+const VERSION='2.21.5-gapinside';
 const BUILD='2026-10-21';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -730,7 +730,8 @@ function loadLibrary(){
   if(!saved||!saved.length){} else if(store.get('seedVersion','')!==SEED_VERSION){ // carry attribute/dimension updates from a newer seed into the saved library, keeping runs, rates and aliases
     let n=0; const seedByAsin=new Map(SEED.map(q=>[q.asin,q])), seedBySku=new Map(SEED.map(q=>[q.sku,q]));
     for(const p of library){ const q=seedByAsin.get(p.asin)||seedBySku.get(p.sku)||SEED.find(q=>(q.altSkus||[]).includes(p.sku)); if(!q) continue; if(q.override&&q.override.sku&&q.override.sku!==p.sku){ if(!p.altSkus.includes(p.sku)) p.altSkus.push(p.sku); p.altSkus=p.altSkus.filter(s=>s!==q.override.sku); p.sku=q.override.sku; p.override={...(p.override||{}),sku:q.override.sku,ts:Date.now()}; n++; } if(q.setRate&&!p.setRate&&!(p.runs||[]).some(r=>r.flag==='ok')){ p.setRate=q.setRate; n++; } if(p.attrs!==q.attrs||p.l!==q.l||p.w!==q.w||p.h!==q.h||p.wt!==q.wt){ Object.assign(p,{attrs:q.attrs,l:q.l,w:q.w,h:q.h,wt:q.wt}); p.a=parseAttrs(p.attrs); (q.altSkus||[]).forEach(a=>{ if(a!==p.sku&&!p.altSkus.includes(a)) p.altSkus.push(a); }); n++; } }
-    store.quiet('seedVersion',SEED_VERSION); if(n){ store.quiet('library',library); setTimeout(()=>feedback(`${n} products updated from the new build (box groups, dims, gap columns)`,'ok'),300); } }
+    // a build's attribute updates (patterns, layer counts, gap columns) are meant for every device: save as a real change so it pushes to the sheet instead of being overwritten by the next pull
+    store.quiet('seedVersion',SEED_VERSION); if(n){ saveLibrary(); setTimeout(()=>feedback(`${n} products updated from the new build (box groups, dims, gap columns)`,'ok'),300); } }
 }
 function saveLibrary(){store.set('library',libRecord());}
 
