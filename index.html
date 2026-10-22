@@ -592,7 +592,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.20.3-patterns';
+const VERSION='2.20.4-patterns';
 const BUILD='2026-10-21';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1208,8 +1208,11 @@ function layoutLayer(L){ const PL=settings.pl, PW=settings.pw; const out=[]; con
   const same=fp.every(f=>Math.abs(f.a-fp[0].a)<0.01&&Math.abs(f.b-fp[0].b)<0.01);
   const pat=G&&G.pat; const TOL=1.5; // a pattern may overhang the deck by an inch or so, as the real stacks do
   if(same&&fp.length&&pat&&pat.reduce((s,c)=>s+c.n,0)>=fp.length){ const long=Math.max(fp[0].a,fp[0].b), short=Math.min(fp[0].a,fp[0].b); let y=0, n=0, ok=true; const placed=[];
+    // columns are drawn to the same length: a column that comes up short spreads its boxes evenly so nobody tries to copy a 3" overhang
+    const colLen=c=>c.n*(c.o==='a'?short:long); const span=Math.min(Math.max(...pat.map(colLen)),areaL+TOL);
     for(const c of pat){ const bw=c.o==='a'?short:long, bl=c.o==='a'?long:short; // bw along the length (x), bl across the width (y)
-      if(c.n*bw>areaL+TOL){ ok=false; break; } for(let i=0;i<c.n&&n<fp.length;i++,n++) placed.push({x:i*bw,y,w:bw,l:bl,h:fp[n].p.h,p:fp[n].p}); y+=bl; }
+      if(c.n*bw>areaL+TOL){ ok=false; break; } const slack=Math.max(0,span-c.n*bw), step=bw+(c.n>1?slack/(c.n-1):0);
+      for(let i=0;i<c.n&&n<fp.length;i++,n++) placed.push({x:i*step,y,w:bw,l:bl,h:fp[n].p.h,p:fp[n].p}); y+=bl; }
     if(ok&&y<=areaW+TOL){ out.push(...placed); }
     else { const a=fp[0].a,b=fp[0].b; const o1={cols:Math.floor(areaL/a),rows:Math.floor(areaW/b),bl:a,bw:b}, o2={cols:Math.floor(areaL/b),rows:Math.floor(areaW/a),bl:b,bw:a}; const o=(o1.cols*o1.rows>=o2.cols*o2.rows)?o1:o2;
       let m=0; for(let r=0;r<o.rows&&m<fp.length;r++) for(let cc=0;cc<o.cols&&m<fp.length;cc++,m++){ out.push({x:cc*o.bl,y:r*o.bw,w:o.bl,l:o.bw,h:fp[m].p.h,p:fp[m].p}); } for(;m<fp.length;m++) out.push({x:(m%o.cols)*o.bl,y:areaW-o.bw,w:o.bl,l:o.bw,h:fp[m].p.h,p:fp[m].p,over:true}); } }
