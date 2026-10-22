@@ -593,7 +593,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.20.5-patterns';
+const VERSION='2.20.6-patterns';
 const BUILD='2026-10-21';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1416,7 +1416,7 @@ function buildPlan(){ plan_endFilm=null;
     const isLight=L=>L.comp.every(c=>(c.p.wt||0)<=settings.lightBox);
     const stackOk=(stack)=>{ // full stack validation: fragile, base rules, load caps
       let above=0; for(let i=stack.length-1;i>=0;i--){ const L=stack[i], up=stack[i+1];
-        if(up){ if(L.fragile&&up.wt>settings.frag&&up.group!==L.group) return false;
+        if(up){ if(L.fragile&&up.wt>settings.frag&&up.group!==L.group) return false; if(L.uneven&&!creative) return false;
           const partialBase=L.kind!=='full'&&(L.fill||0)<baseFill;
           if(partialBase&&up.kind==='full'&&!(isLight(up)&&(L.fill||0)>=0.5)&&!creative) return false; }
         const aboveOther=stack.slice(i+1).filter(x=>x.group!==L.group).reduce((s,x)=>s+x.wt,0); if(aboveOther>L.cap&&!relax) return false; }
@@ -1443,6 +1443,9 @@ function buildPlan(){ plan_endFilm=null;
       // leftovers ride with the pallet that already carries the same product (one place to find it, one label)
       const sameProd=P.layers.some(x=>x.comp.some(c=>L.comp.some(d=>d.p===c.p))); return bal+(sameProd?0.4:0); };
     const putOn=(P,L,idx)=>{ P.layers.splice(idx,0,L); P.h+=L.h; P.wt+=L.wt;
+      // two part layers landing on top of each other share one level when their footprints fit side by side — that's how they get built anyway
+      if(idx>0&&idx===P.layers.length-1&&L.kind!=='full'&&!L.topoff){ const B=P.layers[idx-1]; if(B.kind!=='full'&&!B.topoff&&!B.base&&!L.base&&((B.fill||0)+(L.fill||0))<=0.92&&!(B.fragile&&L.wt>settings.frag)&&!(L.fragile&&B.wt>settings.frag)){
+        P.layers.splice(idx,1); P.h-=L.h; const nh=Math.max(B.h,L.h); P.h+=nh-B.h; B.h=nh; B.wt+=L.wt; B.boxes+=L.boxes; B.fill=(B.fill||0)+(L.fill||0); B.comp.push(...L.comp); B.kind='mixed'; B.group=[...new Set(B.group.split(' + ').concat(L.group.split(' + ')))].join(' + '); B.fragile=B.fragile||L.fragile; B.weak=B.weak||L.weak; B.cap=Math.min(B.cap,L.cap); B.uneven=B.uneven||Math.abs(B.h-L.h)>settings.tol; if(!B.notes.includes('side by side on one level')) B.notes.push('side by side on one level'); L.mergedInto=B; return; } }
       { for(let i=0;i<P.layers.length;i++){ const X=P.layers[i]; const aboveOther=P.layers.slice(i+1).filter(x=>x.group!==X.group).reduce((s,x)=>s+x.wt,0); if(aboveOther>X.cap&&!X.notes.includes('over load cap')) X.notes.push('over load cap'); }
         for(let i=0;i<P.layers.length-1;i++){ const X=P.layers[i],up=P.layers[i+1]; if(X.kind!=='full'&&(X.fill||0)<baseFill&&up.kind==='full'){ const n=isLight(up)?'light full layer on a partial one — level it by hand':'full layer on a partial one — level it out by hand'; if(!up.notes.includes(n)) up.notes.push(n);} } } };
     const takeOff=(P,L)=>{ P.layers.splice(P.layers.indexOf(L),1); P.h-=L.h; P.wt-=L.wt; };
