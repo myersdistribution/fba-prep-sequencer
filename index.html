@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.23.5-shift';
+const VERSION='2.23.6-shift';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1224,7 +1224,12 @@ function gridPlace(fp,areaL,areaW,out){ const a=fp[0].a,b=fp[0].b; const o1={col
   const pos=(i,n,size,span)=>{ const slack=span-n*size; if(n<=1||slack<=0) return i*size; if(slack>1) return i===n-1?span-size:i*size; return i*(size+slack/(n-1)); };
   let n=0; for(let r=0;r<o.rows&&n<fp.length;r++) for(let c=0;c<o.cols&&n<fp.length;c++,n++){ out.push({x:pos(c,o.cols,o.bl,areaL),y:pos(r,o.rows,o.bw,areaW),w:o.bl,l:o.bw,h:fp[n].p.h,p:fp[n].p}); }
   for(;n<fp.length;n++) out.push({x:(n%o.cols)*o.bl,y:areaW-o.bw,w:o.bl,l:o.bw,h:fp[n].p.h,p:fp[n].p,over:true}); }
-function layoutLayer(L){ const PL=settings.pl, PW=settings.pw; const out=[]; const items=[];
+function supportOf(lay){ const bs=(lay||[]).filter(b=>!b.strip&&!b.inGap&&!b.over); if(!bs.length) return null; const x0=Math.min(...bs.map(b=>b.x)), y0=Math.min(...bs.map(b=>b.y)), x1=Math.max(...bs.map(b=>b.x+b.w)), y1=Math.max(...bs.map(b=>b.y+b.l)); return {x:x0,y:y0,w:x1-x0,l:y1-y0}; }
+function layoutLayer(L,support){ const PL=settings.pl, PW=settings.pw; const out=[]; const items=[];
+  // a part layer on top of a part layer is drawn inside the footprint of what's under it — boxes never hang over empty deck
+  if(support&&L.kind!=='full'&&!L.gap){ const sub=layoutLayerIn(L,support.w,support.l); sub.forEach(b=>{ b.x+=support.x; b.y+=support.y; }); return sub; }
+  return layoutLayerIn(L,PL,PW); }
+function layoutLayerIn(L,PL,PW){ const out=[]; const items=[];
   L.comp.forEach(c=>{ for(let i=0;i<c.boxes;i++) items.push({p:c.p,inGap:!!c.inGap,ori:c.ori||null}); });
   const main=items.filter(i=>!i.inGap), gapItems=items.filter(i=>i.inGap);
   const G=buildGroups().find(g=>g.name===L.group)||null; const gap=(L.gap&&G&&G.gap)?G.gap:null;
@@ -1253,7 +1258,7 @@ function layoutLayer(L){ const PL=settings.pl, PW=settings.pw; const out=[]; con
   if(gap){ const strip=patStrip||((areaW<PW)?{x:0,y:areaW,w:PL,l:gap.w}:{x:areaL,y:0,w:gap.w,l:PW}); out.push({...strip,strip:true,label:`gap ${gap.w}"`}); let k=0; for(const gi of gapItems){ const o=gi.ori||gapOrient(gi.p,gap.w)||{across:Math.min(gi.p.l,gi.p.w),along:Math.max(gi.p.l,gi.p.w),h:gi.p.h}; const bw=o.across, bl=o.along; const along=strip.w>strip.l; const n=Math.max(1,Math.floor((along?strip.w:strip.l)/bl)); const i=k%n; out.push(along?{x:strip.x+i*bl,y:strip.y,w:bl,l:Math.min(bw,gap.w),h:o.h,p:gi.p,inGap:true,ori:o,stackN:Math.floor(k/n)}:{x:strip.x,y:strip.y+i*bl,w:Math.min(bw,gap.w),l:bl,h:o.h,p:gi.p,inGap:true,ori:o,stackN:Math.floor(k/n)}); k++; } }
   if(flip) out.forEach(b=>{ if(!b.strip) b.x=PL-b.x-b.w; });
   return out; }
-function layerSvg(L,size=170){ const PL=settings.pl,PW=settings.pw; const sc=size/PL; const boxes=layoutLayer(L);
+function layerSvg(L,size=170,support=null){ const PL=settings.pl,PW=settings.pw; const sc=size/PL; const boxes=layoutLayer(L,support);
   return `<svg viewBox="0 0 ${PL} ${PW}" width="${size}" height="${Math.round(PW*sc)}" style="background:#2a2415;border:1px solid var(--border);border-radius:4px;display:block">`+
     boxes.map(b=>b.strip?`<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.l}" fill="none" stroke="#4ade9a" stroke-dasharray="1.5" stroke-width=".4"/>`:
       `<g><rect x="${b.x+.2}" y="${b.y+.2}" width="${b.w-.4}" height="${b.l-.4}" fill="${groupColor(b.p.a.box||b.p.name)}" fill-opacity="${b.inGap?.55:b.over?.35:.85}" stroke="#0f1117" stroke-width=".4"/>${b.w>=8&&b.l>=5?`<text x="${b.x+b.w/2}" y="${b.y+b.l/2+1.2}" font-size="3" text-anchor="middle" fill="#0f1117" font-family="IBM Plex Mono,monospace">${esc((b.p.name.match(/Red|Black|Green|Blue|Cherry|Cinnamon|Water|Straw|Rasp/)||[''])[0]||'')}</text>`:''}</g>`).join('')+`</svg>`; }
@@ -1276,7 +1281,7 @@ function draw3d(){ const plan=buildPlan(); const P=plan&&plan.pallets.find(x=>x.
   const F=iso.focus; const lit=F?(F.byP[P.n]||new Set()):null;
   let z=PD; const cols={}; // gap columns keyed by strip position: fillers stack from the deck regardless of which host layer they were counted against;
   // a strip holds one sub-column per filler footprint, side by side along its length (noodles flat, then apple butters in the end hole)
-  for(const L of P.layers){ const lay=layoutLayer(L); const strip=lay.find(b=>b.strip);
+  let prevLay=null; for(const L of P.layers){ const lay=layoutLayer(L,prevLay&&P.layers[P.layers.indexOf(L)-1].kind!=='full'?supportOf(prevLay):null); const strip=lay.find(b=>b.strip); prevLay=lay;
     for(const b of lay){ if(b.strip) continue; const h=b.h||L.h; const ghost=F&&!(lit.has(L.idx)&&b.p.id===F.pid); const color=ghost?'#3a3f55':groupColor(b.p.a.box||b.p.name);
       if(b.inGap&&strip){ const key=`${strip.x.toFixed(0)},${strip.y.toFixed(0)}`; const horiz=strip.w>strip.l; const len=horiz?strip.w:strip.l; const c=cols[key]=cols[key]||{used:0,subs:[]};
         const o=b.ori||gapOrient(b.p,horiz?strip.l:strip.w)||{across:Math.min(b.p.l||1,b.p.w||1),along:Math.max(b.p.l||1,b.p.w||1),h}; const along=o.along, across=o.across; let sub=c.subs.find(x=>x.along===along); if(!sub){ const rowN=Math.max(1,Math.floor((len-c.used)/along)); if(rowN<1) continue; sub={off:c.used,along,rowN,z:PD,k:0,rowH:0}; c.used+=rowN*along; c.subs.push(sub); }
@@ -1461,6 +1466,7 @@ function buildPlan(){ plan_endFilm=null;
     const stackOk=(stack)=>{ // full stack validation: fragile, base rules, load caps
       let above=0; for(let i=stack.length-1;i>=0;i--){ const L=stack[i], up=stack[i+1];
         if(up){ if(L.fragile&&up.wt>settings.frag&&up.group!==L.group) return false; if(L.uneven&&!creative) return false;
+          if(L.kind!=='full'&&up.kind!=='full'&&(up.fill||0)>(L.fill||0)+0.05&&!creative) return false; // a part layer can't be bigger than the part layer it sits on
           const partialBase=L.kind!=='full'&&(L.fill||0)<baseFill;
           if(partialBase&&up.kind==='full'&&!(isLight(up)&&(L.fill||0)>=0.5)&&!creative) return false; }
         const aboveOther=stack.slice(i+1).filter(x=>x.group!==L.group).reduce((s,x)=>s+x.wt,0); if(aboveOther>L.cap&&!relax) return false; }
@@ -1492,7 +1498,8 @@ function buildPlan(){ plan_endFilm=null;
       const sameProd=P.layers.some(x=>x.comp.some(c=>L.comp.some(d=>d.p===c.p))); return bal+(sameProd?0.4:0); };
     const putOn=(P,L,idx)=>{ P.layers.splice(idx,0,L); P.h+=L.h; P.wt+=L.wt;
       // two part layers landing on top of each other share one level when their footprints fit side by side — that's how they get built anyway
-      if(idx>0&&idx===P.layers.length-1&&L.kind!=='full'&&!L.topoff){ const B=P.layers[idx-1]; if(B.kind!=='full'&&!B.topoff&&!B.base&&!L.base&&((B.fill||0)+(L.fill||0))<=0.92&&!(B.fragile&&L.wt>settings.frag)&&!(L.fragile&&B.wt>settings.frag)){
+      if(idx>0&&idx===P.layers.length-1&&L.kind!=='full'&&!L.topoff){ const B=P.layers[idx-1]; const under=idx>=2?P.layers[idx-2]:null; const fits=!under||under.kind==='full'||(under.fill||0)>=(B.fill||0)+(L.fill||0)-0.05;
+        if(fits&&B.kind!=='full'&&!B.topoff&&!B.base&&!L.base&&((B.fill||0)+(L.fill||0))<=0.92&&!(B.fragile&&L.wt>settings.frag)&&!(L.fragile&&B.wt>settings.frag)){
         P.layers.splice(idx,1); P.h-=L.h; const nh=Math.max(B.h,L.h); P.h+=nh-B.h; B.h=nh; B.wt+=L.wt; B.boxes+=L.boxes; B.fill=(B.fill||0)+(L.fill||0); B.comp.push(...L.comp); B.kind='mixed'; B.group=[...new Set(B.group.split(' + ').concat(L.group.split(' + ')))].join(' + '); B.fragile=B.fragile||L.fragile; B.weak=B.weak||L.weak; B.cap=Math.min(B.cap,L.cap); B.uneven=B.uneven||Math.abs(B.h-L.h)>settings.tol; if(!B.notes.includes('side by side on one level')) B.notes.push('side by side on one level'); L.mergedInto=B; return; } }
       { for(let i=0;i<P.layers.length;i++){ const X=P.layers[i]; const aboveOther=P.layers.slice(i+1).filter(x=>x.group!==X.group).reduce((s,x)=>s+x.wt,0); if(aboveOther>X.cap&&!X.notes.includes('over load cap')) X.notes.push('over load cap'); }
         for(let i=0;i<P.layers.length-1;i++){ const X=P.layers[i],up=P.layers[i+1]; if(X.kind!=='full'&&(X.fill||0)<baseFill&&up.kind==='full'){ const n=isLight(up)?'light full layer on a partial one — level it by hand':'full layer on a partial one — level it out by hand'; if(!up.notes.includes(n)) up.notes.push(n);} } } };
@@ -1620,10 +1627,10 @@ function renderPallets(){
     <h3><span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${palColor(P.n)};margin-right:6px"></span>Pallet ${P.n} <button class="btn" style="padding:3px 8px;font-size:10px" onclick="open3d(${P.n})">3D</button>${P.whole?` <span class="pill" style="border-color:${palColor(P.n)};color:${palColor(P.n)}">whole pallet · ${esc(P.whole)}</span>`:''}</span><span class="meta">${P.layers.length} layers · ${P.boxes} boxes · ${(P.h+settings.pd).toFixed(1)}" incl. deck · ~${Math.round(grossWt(P.wt))} lb incl. deck</span></h3>
     <div class="meta">Height ${Math.round((P.h+settings.pd)/settings.ph*100)}% · Weight ${Math.round((P.wt+(settings.deckWt||0))/settings.pwt*100)}% of limits${settings.margin?` <span class="help">(${Math.round(P.wt+(settings.deckWt||0))} lb planned, ~${Math.round(grossWt(P.wt))} with the ${settings.margin}% safety margin)</span>`:''} · <b style="color:var(--accent2)">room: ${(plan.usable-P.h).toFixed(1)}" · ${Math.round(pwtNetG()-P.wt)} lb</b></div>
     <div class="row" style="margin-top:8px;align-items:flex-end"><div class="field" style="max-width:130px"><label>Actual lb</label><input type="number" value="${(shipment.actual?.[P.n]||{}).wt??''}" onchange="setActual(${P.n},'wt',this.value)"></div><div class="field" style="max-width:130px"><label>Actual height (in)</label><input type="number" step="0.5" value="${(shipment.actual?.[P.n]||{}).h??''}" onchange="setActual(${P.n},'h',this.value)"></div><span class="help">planned ~${Math.round(grossWt(P.wt))} lb · ${(P.h+settings.pd).toFixed(1)}"</span></div>
-    <div class="stack"><div class="deck"></div>${P.layers.map(L=>`<div class="layer ${L.kind}${L.fragile?' fragile':''}" style="min-height:${Math.max(28,L.h*4)}px">
+    <div class="stack"><div class="deck"></div>${(()=>{ const sup=[]; let prev=null; P.layers.forEach((L,i)=>{ const sp=i>0&&P.layers[i-1].kind!=='full'?supportOf(prev):null; sup.push(sp); prev=layoutLayer(L,sp); }); return P.layers.map((L,li)=>`<div class="layer ${L.kind}${L.fragile?' fragile':''}" style="min-height:${Math.max(28,L.h*4)}px">
       <div><div class="lt">L${L.idx} · <b>${esc(L.group)} · ${L.comp.filter(c=>!c.inGap).reduce((s,c)=>s+c.boxes,0)}</b>${L.comp.filter(c=>!c.inGap).length===1?` <span class="muted">${esc(L.comp.find(c=>!c.inGap).p.name.length>30?L.comp.find(c=>!c.inGap).p.name.slice(0,28)+'…':L.comp.find(c=>!c.inGap).p.name)}</span>`:''}${L.kind==='full'?'':` <span class="pill">${L.kind}${L.fill?` ${Math.round(L.fill*100)}%`:''}</span>`}${L.fragile?'<span class="pill flag">fragile</span>':''}${L.weak?'<span class="pill flag">weak</span>':''}${L.base?'<span class="pill">base · label in place</span>':''}</div>
         <div class="lm">${L.comp.filter(c=>!c.inGap).length>1?L.comp.filter(c=>!c.inGap).map(c=>`${c.boxes}× ${esc(c.p.name.length>34?c.p.name.slice(0,32)+'…':c.p.name)}`).join(' · '):''}${L.gap?`<div style="color:var(--accent2)">↕ gap: ${L.gap.comp.map(c=>`${c.boxes}× ${esc(c.p.name.slice(0,30))}`).join(' · ')}</div>`:''}</div></div>
-      <div class="lm">${L.boxes} bx · ${L.h}" · ${Math.round(L.wt)} lb${L.notes.length?`<div style="color:var(--warn)">⚠ ${esc(L.notes.join('; '))}</div>`:''}</div></div>${maps?`<div class="layer" style="padding:4px;justify-content:center;background:transparent;border-style:dotted">${layerSvg(L,Math.min(220,Math.max(150,(document.getElementById('pal-list').clientWidth||360)-60)))}</div>`:''}`).join('')}${P.fill.map(F=>`<div class="layer mixed" style="border-style:dashed"><div><div class="lt">✋ Hand-fit · ${esc(F.group)}</div><div class="lm">${F.comp.map(c=>esc(c.p.name.length>34?c.p.name.slice(0,32)+'…':c.p.name)).join(' · ')} — on side, on end, or in gaps</div></div><div class="lm">~${F.boxes} bx · ${Math.round(F.wt)} lb</div></div>`).join('')}</div>${P.creativeFrom?`<div class="help" style="color:var(--warn)">⚠ Creative zone from layer ${P.creativeFrom}: rules bent to stay at ${plan.target} pallet${plan.target>1?'s':''} — cross-tie, fill gaps, and check the light boxes below aren't crushing.</div>`:''}
+      <div class="lm">${L.boxes} bx · ${L.h}" · ${Math.round(L.wt)} lb${L.notes.length?`<div style="color:var(--warn)">⚠ ${esc(L.notes.join('; '))}</div>`:''}</div></div>${maps?`<div class="layer" style="padding:4px;justify-content:center;background:transparent;border-style:dotted">${layerSvg(L,Math.min(220,Math.max(150,(document.getElementById('pal-list').clientWidth||360)-60)),sup[li])}</div>`:''}`).join(''); })()}${P.fill.map(F=>`<div class="layer mixed" style="border-style:dashed"><div><div class="lt">✋ Hand-fit · ${esc(F.group)}</div><div class="lm">${F.comp.map(c=>esc(c.p.name.length>34?c.p.name.slice(0,32)+'…':c.p.name)).join(' · ')} — on side, on end, or in gaps</div></div><div class="lm">~${F.boxes} bx · ${Math.round(F.wt)} lb</div></div>`).join('')}</div>${P.creativeFrom?`<div class="help" style="color:var(--warn)">⚠ Creative zone from layer ${P.creativeFrom}: rules bent to stay at ${plan.target} pallet${plan.target>1?'s':''} — cross-tie, fill gaps, and check the light boxes below aren't crushing.</div>`:''}
   </div>`).join('')+(plan.unplaced.length?`<div class="card"><div class="card-title"><span style="color:var(--danger)">Not placed</span></div>${plan.unplaced.map(u=>`<div class="help">${esc(u.name)} — ${u.boxes} boxes (${u.why})</div>`).join('')}</div>`:'');
 }
 function prepTimerHtml(r){
