@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.23.2-shift';
+const VERSION='2.23.3-shift';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1389,11 +1389,14 @@ function buildPlan(){ plan_endFilm=null;
     for(const [key,d] of demand){ const G=d.G; if(!G.gap||!G.l) continue; const per=G.layer||G.gridFit||1; const total=d.items.reduce((s,i)=>s+i.boxes,0); let full=Math.floor(total/per); // every full layer carries the gap column, deck up — the same layout on every layer
       if(!full) continue; const colH=full*G.h; const segs=[{len:G.gap.l,hLeft:colH,along:0}]; const taken=[]; // the gap is a continuous column from the deck: fillers stack on each other, never above the host stack;
       // length left at the end of the strip (the 8" hole after two noodle cases) becomes its own little column for a shorter product
-      for(const fd of fillerDemand){ for(const it of fd.items){ if(!((it.p.a.tip==='ok'||it.p.a.perbox===1)&&Math.min(it.p.l,it.p.w)<=G.gap.w)) continue; const along=Math.max(it.p.l,it.p.w);
+      // the product that fills the strip's width best goes first (noodles in the 9" gallon gap), the next one takes whatever length is left
+      const cands=[]; for(const fd of fillerDemand) for(const it of fd.items){ if((it.p.a.tip==='ok'||it.p.a.perbox===1)&&Math.min(it.p.l,it.p.w)<=G.gap.w) cands.push(it); }
+      cands.sort((a,b)=>Math.min(b.p.l,b.p.w)-Math.min(a.p.l,a.p.w)||b.boxes-a.boxes);
+      for(const it of cands){ { const along=Math.max(it.p.l,it.p.w);
           const seg=segs.find(sg=>sg.hLeft>0&&(sg.along===0||sg.along===along)&&sg.len>=along); if(!seg) continue;
           const rowN=Math.max(1,Math.floor(seg.len/along)), rows=Math.floor(seg.hLeft/it.p.h); const n=Math.min(it.boxes,rows*rowN); if(n<=0) continue;
           if(seg.along===0){ seg.along=along; const spare=seg.len-rowN*along; seg.len=rowN*along; if(spare>=5) segs.push({len:spare,hLeft:colH,along:0}); }
-          it.boxes-=n; seg.hLeft-=Math.ceil(n/rowN)*it.p.h; taken.push({p:it.p,boxes:n,wtEach:it.wtEach}); } }
+          it.boxes-=n; seg.hLeft-=Math.ceil(n/rowN)*it.p.h; taken.push({p:it.p,boxes:n,wtEach:it.wtEach,rowN}); } }
       if(taken.length){ gapFills.push({group:G.name,layers:full,fill:taken,perLayer:Math.ceil(taken.reduce((s,t)=>s+t.boxes,0)/full)}); }
     }
     for(const d of demand.values()) d.items=d.items.filter(it=>it.boxes>0);
@@ -1407,7 +1410,7 @@ function buildPlan(){ plan_endFilm=null;
     for(let i=0;i<full;i++){ let need=per, comp=[], wt=0;
       while(need>0){ const it=pool.find(x=>x.boxes>0); const take=Math.min(need,it.boxes); it.boxes-=take; need-=take; wt+=take*it.wtEach; comp.push({p:it.p,boxes:take}); }
       const gf=gapFills.find(g=>g.group===G.name); let gap=null;
-      if(gf){ const li=i; if(li<gf.layers){ gap={comp:[],boxes:0,wt:0}; for(const t of gf.fill){ const share=Math.floor(t.boxes/gf.layers)+(li<t.boxes%gf.layers?1:0); if(share>0){ gap.comp.push({p:t.p,boxes:share}); gap.boxes+=share; gap.wt+=share*t.wtEach; } } wt+=gap.wt; } }
+      if(gf){ const li=i; if(li<gf.layers){ gap={comp:[],boxes:0,wt:0}; for(const t of gf.fill){ const share=Math.floor(t.boxes/gf.layers)+(li<t.boxes%gf.layers?1:0); if(share>0){ gap.comp.push({p:t.p,boxes:share,rowN:t.rowN}); gap.boxes+=share; gap.wt+=share*t.wtEach; } } wt+=gap.wt; } }
       layers.push({seq:layers.length,kind:'full',mixedFlavors:comp.length>1,group:G.name,h:G.h,wt,boxes:per+(gap?gap.boxes:0),comp:gap?comp.concat(gap.comp.map(c=>({...c,inGap:true}))):comp,gap,fragile:G.fragile,weak:G.weak,base:G.base,stack:G.stack||null,hi:G.hi||null,cap:G.load||((G.wt||0)<=settings.lightBox?Math.max(settings.loadMin,settings.loadFactor*wt):Infinity)}); }
     const rest=pool.filter(x=>x.boxes>0); if(rest.length) leftovers.push({G,items:rest,boxes:rest.reduce((s,i)=>s+i.boxes,0)});
   }
@@ -1550,7 +1553,7 @@ function buildPlan(){ plan_endFilm=null;
   // layers they sit in, because a gap can't be filled once more layers are on.
   pallets.forEach((P,i)=>{ P.tmp=i; });
   const runs=[];
-  for(const P of pallets){ P.layers.forEach((L,j)=>{ L.idx=j+1; for(const c of L.comp){ const units=c.p.a.perbox===1?c.boxes:c.boxes*c.p.upc; runs.push({p:c.p,setup:setupOf(c.p),boxes:c.boxes,units,P,L,layer:L.idx,layerKey:L.group,inGap:!!c.inGap}); } });
+  for(const P of pallets){ P.layers.forEach((L,j)=>{ L.idx=j+1; for(const c of L.comp){ const units=c.p.a.perbox===1?c.boxes:c.boxes*c.p.upc; runs.push({p:c.p,setup:setupOf(c.p),boxes:c.boxes,units,P,L,layer:L.idx,layerKey:L.group,inGap:!!c.inGap,rowN:c.rowN||null}); } });
     for(const F of P.fill){ const tot=F.comp.reduce((s,c)=>s+c.boxes,0); for(const c of F.comp){ const bx=Math.max(1,Math.round(c.boxes*F.boxes/tot)); const units=c.p.a.perbox===1?bx:bx*c.p.upc; runs.push({p:c.p,setup:setupOf(c.p),boxes:bx,units,P,L:null,layer:P.layers.length+1,layerKey:'hand-fit'}); } } }
   const prepped=shipment.prepped||{}; runs.forEach(r=>{ const pu=prepped[r.p.id]||0; r.done=pu>=(shipment.lines.find(l=>l.id===r.p.id)||{}).units; r.partPrepped=!r.done&&pu>0?pu:0; });
   const isShrink=s=>s.startsWith('shrink');
@@ -1643,7 +1646,8 @@ function renderPrep(){
     n++; if(prepFilter&&!r.dest.some(d=>d.pallet===prepFilter)) continue; const em=r.done?null:minsForBoxes(r.p,r.boxes); if(em!=null) clock+=em;
     const shareB=prepFilter?r.dest.filter(d=>d.pallet===prepFilter).reduce((s,d)=>s+d.boxes,0):r.boxes, shareU=prepFilter?(r.p.a.perbox===1?shareB:shareB*(r.p.upc||1)):r.units;
     html+=`<div class="run ${r.done?'done':''}"><div class="n">${n}</div><div style="flex:1"><div>${r.gapFill?`<span class="pill" style="border-color:var(--warn);color:var(--warn)">gap fill${r.deferred?' first — before anything goes on':' — do now'}${r.gapFor?', into the '+esc(r.gapFor.name.replace(/\s*\(Pack.*$/,'').slice(0,30))+' layers':', into the gap columns'}</span> `:''}${r.p.loc?`<span class="pill" style="background:var(--accent);color:#0f1117;border-color:var(--accent);font-weight:700;font-size:12px;padding:3px 9px;margin-right:6px">BAY ${esc(r.p.loc)}</span>`:'<span class="pill" style="color:var(--warn);border-color:var(--warn);margin-right:6px" onclick="setLoc(\''+r.p.id+'\')">no bay</span>'}${esc(r.p.name)}<span class="mono muted">· ${shareU} units · <b style="color:var(--text)">${casesFor(r.p,shareU)} case${casesFor(r.p,shareU)===1?'':'s'}</b> of ${r.p.upc||1}${prepFilter&&shareB!==r.boxes?` <span style="color:var(--warn)">(${casesFor(r.p,r.units)} in the whole run)</span>`:''}${r.done?' · <span style="color:var(--accent2)">already prepped — stack from staging</span>':em!=null?` · ~${fmtMin(em)} prep${rateOf(r.p).dflt?' (default)':rateOf(r.p).manual?' (set)':''}`:' · <span style="color:var(--warn)">no rate yet</span>'}${atOf.has(r)?` · done ~<span style="color:var(--accent)">${fmtShift(shiftAdd(new Date(),atOf.get(r)))}</span>`:''}${r.partPrepped?` · <span style="color:var(--accent2)">${r.partPrepped} pre-prepped</span>`:''}</span> <span class="pill prep">${esc(prepLabel(r.p.a.prep))}</span>${r.staged?' <span class="pill flag">staged</span>':''}</div>
-      <div class="dest">${(()=>{ const byP={}; r.dest.forEach(d=>{(byP[d.pallet]=byP[d.pallet]||[]).push(d);}); return Object.keys(byP).map(n=>{ const ds=byP[n]; const P=plan.pallets.find(x=>x.n==n); const whole=P&&P.whole&&P.layers.every(L=>L.comp.every(c=>c.p===r.p)); return `<span class="pill" style="border-color:${palColor(+n)};color:${palColor(+n)};${prepFilter&&+n!==prepFilter?'opacity:.35':''}">P${n}${whole?' · whole pallet':' '+ds.map(d=>`L${d.layer}${d.inGap?' gap':''} (${d.boxes})`).join(' ')}</span>`; }).join(' '); })()}</div><div class="row" style="margin-top:6px;align-items:center">${prepTimerHtml(r).replace('<div style="margin-top:6px">','<div>')}<button class="btn" style="padding:5px 10px" onclick="openRun3d('${r.p.id}')">▦ Where</button><button class="btn" style="padding:5px 10px;${r.done?'color:var(--accent2)':''}" onclick="markPrepped('${r.p.id}'${r.done?',0':''})">${r.done?'✓ Staged':'Mark prepped'}</button>${trainBtn(r.p.id)}<button class="btn" style="padding:5px 10px;color:var(--danger)" onclick="openIssue('${r.p.id}',${r.units},'${esc(r.dest.map(d=>'P'+d.pallet+' L'+d.layer).join(', '))}')">⚑ Report issue</button></div></div></div>`; }
+      <div class="dest">${(()=>{ const byP={}; r.dest.forEach(d=>{(byP[d.pallet]=byP[d.pallet]||[]).push(d);}); return Object.keys(byP).map(n=>{ const ds=byP[n]; const P=plan.pallets.find(x=>x.n==n); const whole=P&&P.whole&&P.layers.every(L=>L.comp.every(c=>c.p===r.p)); const gapTot=ds.filter(d=>d.inGap).reduce((s,d)=>s+d.boxes,0); const gapTxt=(()=>{ if(!gapTot||!r.gapFill) return null; const rowN=Math.max(1,ds.find(d=>d.inGap&&d.rowN)?.rowN||1); return `gap column · ${gapTot} (${Math.min(rowN,gapTot)} per row, ${Math.ceil(gapTot/Math.min(rowN,gapTot))} high)`; })();
+        return `<span class="pill" style="border-color:${palColor(+n)};color:${palColor(+n)};${prepFilter&&+n!==prepFilter?'opacity:.35':''}">P${n}${whole?' · whole pallet':gapTxt?' · '+gapTxt:' '+ds.map(d=>`L${d.layer}${d.inGap?' gap':''} (${d.boxes})`).join(' ')}</span>`; }).join(' '); })()}</div><div class="row" style="margin-top:6px;align-items:center">${prepTimerHtml(r).replace('<div style="margin-top:6px">','<div>')}<button class="btn" style="padding:5px 10px" onclick="openRun3d('${r.p.id}')">▦ Where</button><button class="btn" style="padding:5px 10px;${r.done?'color:var(--accent2)':''}" onclick="markPrepped('${r.p.id}'${r.done?',0':''})">${r.done?'✓ Staged':'Mark prepped'}</button>${trainBtn(r.p.id)}<button class="btn" style="padding:5px 10px;color:var(--danger)" onclick="openIssue('${r.p.id}',${r.units},'${esc(r.dest.map(d=>'P'+d.pallet+' L'+d.layer).join(', '))}')">⚑ Report issue</button></div></div></div>`; }
   if(plan.endFilm) html+=`<div class="row" style="margin-top:10px;justify-content:flex-end"><span class="help">This plan ends with ${plan.endFilm}" film loaded.</span><button class="btn" onclick="markFilm('${plan.endFilm}')">Shipment done → ${plan.endFilm}" is loaded now</button></div>`;
   el.innerHTML=html+'</div>';
 }
