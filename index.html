@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.24.0-gapcols';
+const VERSION='2.24.1-gapcols';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1106,7 +1106,7 @@ function export2DW(withBoxes){ if(!shipment||!shipment.lines.length){feedback('N
   const hdr=['SKU','Quantity','Expiration date (MM-DD-YYYY)','Units per box','Number of boxes','Box width (in)','Box length (in)','Box height (in)','Box weight (lb)','Location','Notes','Expiry text','Title','UPC'];
   const rows=[['Required',null,'Optional',null,null,null,null,null,null,null,null,null,null,null],hdr];
   for(const l of shipment.lines){ const p=library.find(x=>x.id===l.id); if(!p||!l.units) continue;
-    const r=[p.sku,l.units,null,null,null,null,null,null,null,null,null,null,null,null];
+    const r=[p.sku,l.units,null,null,null,null,null,null,null,(p.loc||'').trim()||null,null,null,null,null]; // Location = bay from the library
     if(withBoxes&&hasDims(p)&&!p.a.varbox){ const per=p.a.perbox===1?1:(p.upc||1); const full=Math.floor(l.units/per); if(full>0&&l.units%per===0){ r[3]=per; r[4]=full; r[5]=p.w; r[6]=p.l; r[7]=p.h; r[8]=p.wt; } }
     rows.push(r); }
   // start from 2D Workflow's own blank template so all three tabs are present, then fill the rows in
