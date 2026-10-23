@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.24.1-gapcols';
+const VERSION='2.24.2-gapcols';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -655,7 +655,10 @@ function mergeShipment(mine,theirs,theirsNewer){ if(!mine||!theirs) return their
   { const S=new Map(); const put=(x,win)=>{ const e=S.get(x.id); if(!e){ S.set(x.id,{...x}); return; } const m={...(win?e:x),...(win?x:e)}; m.stop=e.stop&&x.stop?(win?x.stop:e.stop):(e.stop||x.stop||null); S.set(x.id,m); };
     ((theirsNewer?mine.sessions:theirs.sessions)||[]).forEach(x=>put(x,false)); ((theirsNewer?theirs.sessions:mine.sessions)||[]).forEach(x=>put(x,true)); if(S.size) base.sessions=[...S.values()]; }
   // lines: union by id; units from the newer copy
-  const lines=new Map(); ((theirsNewer?mine.lines:theirs.lines)||[]).forEach(l=>lines.set(l.id,{...l})); ((theirsNewer?theirs.lines:mine.lines)||[]).forEach(l=>lines.set(l.id,{...l})); base.lines=[...lines.values()];
+  const lines=new Map(); ((theirsNewer?mine.lines:theirs.lines)||[]).forEach(l=>lines.set(l.id,{...l})); ((theirsNewer?theirs.lines:mine.lines)||[]).forEach(l=>lines.set(l.id,{...l}));
+  // a line removed on either device stays removed (tombstone) unless it was added back later than the removal
+  const rm=new Map(); [...(mine.removed||[]),...(theirs.removed||[])].forEach(r=>{ if(!rm.has(r.id)||rm.get(r.id)<r.ts) rm.set(r.id,r.ts); });
+  base.removed=[...rm].map(([id,ts])=>({id,ts})); base.lines=[...lines.values()].filter(l=>!rm.has(l.id)||(l.ts||0)>rm.get(l.id));
   return base; }
 // libraries merge per product: runs are a union (never dropped), newest wins for edited fields, locations by their own stamp
 function mergeLibrary(mineIn,theirsIn,theirsNewer){ const A=splitLib(mineIn), B=splitLib(theirsIn); tombstones=mergeTombs(tombstones,mergeTombs(A.tombs,B.tombs)); store.quiet('tombstones',tombstones);
@@ -1085,9 +1088,9 @@ function renderJobClock(){ const el=document.getElementById('job-clock'); if(el)
 setInterval(()=>{ const r=runningSession(); if(!r) return; document.querySelectorAll('#job-live,.job-live').forEach(e=>{ e.textContent=fmtMin(sessionMins(r)); }); },30000);
 function setShipField(k,v){ if(!shipment) return; shipment[k]=v; store.set('shipment',shipment); }
 function newShipment(){ const name=(document.getElementById('new-ship-name').value||'Plan').trim(); shipment={source:name,shipId:'',info:{},loadedAt:new Date().toLocaleString(),loadedTs:Date.now(),lines:[],unmatched:[],actual:{},wo:'',dest:'',carrier:'',shipDate:''}; store.set('shipment',shipment); renderAll(); feedback('Blank shipment started — add products below','ok'); }
-async function setUnits(id,v){ if(!shipment) return; const l=shipment.lines.find(x=>x.id===id); if(!l) return; const n=Math.max(0,parseInt(v)||0); if(n===0){ const p=library.find(x=>x.id===id); if(!await ask(`Remove ${p?p.name.slice(0,40):'this line'} from the shipment?`,{ok:'Remove'})){ renderShipment(); return; } shipment.lines=shipment.lines.filter(x=>x!==l); } else { if(l.orig==null) l.orig=l.units; l.units=n; } store.set('shipment',shipment); renderAll(); }
+async function setUnits(id,v){ if(!shipment) return; const l=shipment.lines.find(x=>x.id===id); if(!l) return; const n=Math.max(0,parseInt(v)||0); if(n===0){ const p=library.find(x=>x.id===id); if(!await ask(`Remove ${p?p.name.slice(0,40):'this line'} from the shipment?`,{ok:'Remove'})){ renderShipment(); return; } shipment.lines=shipment.lines.filter(x=>x!==l); (shipment.removed=shipment.removed||[]).push({id:l.id,ts:Date.now()}); } else { if(l.orig==null) l.orig=l.units; l.units=n; } store.set('shipment',shipment); renderAll(); }
 function addLine(){ if(!shipment) return; const p=findByText(document.getElementById('ship-add-find').value); const n=parseInt(document.getElementById('ship-add-units').value)||0; if(!p||n<1){feedback('Pick a product and enter units','err');return;}
-  const ex=shipment.lines.find(x=>x.id===p.id); if(ex){ if(ex.orig==null) ex.orig=ex.units; ex.units+=n; } else shipment.lines.push({id:p.id,sku:p.sku,units:n,orig:0});
+  const ex=shipment.lines.find(x=>x.id===p.id); if(ex){ if(ex.orig==null) ex.orig=ex.units; ex.units+=n; } else shipment.lines.push({id:p.id,sku:p.sku,units:n,orig:0,ts:Date.now()});
   store.set('shipment',shipment); document.getElementById('ship-add-find').value=''; document.getElementById('ship-add-units').value=''; renderAll(); feedback(`Added ${n} × ${p.name.slice(0,40)}`,'ok'); }
 let fillCalc=null;
 function fillPreview(){ const q=document.getElementById('fill-find').value; const p=findByText(q); const out=document.getElementById('fill-preview'), btn=document.getElementById('fill-btn'); fillCalc=null; btn.disabled=true;
@@ -1100,7 +1103,7 @@ function fillPreview(){ const q=document.getElementById('fill-find').value; cons
   if(!boxes){ out.textContent=`No full layer of ${p.name.slice(0,40)} fits on any pallet right now.`; return; }
   fillCalc={p,units,boxes}; btn.disabled=false; btn.textContent=`Add ${units} units`;
   out.innerHTML=`<b>${boxes} boxes / ${units} units</b> of ${esc(p.name.slice(0,50))} would fill the remaining height and weight: ${parts.join(' · ')}. Adding them re-plans, so the final layout may differ slightly.`; }
-function fillApply(){ if(!fillCalc||!shipment) return; const {p,units}=fillCalc; const ex=shipment.lines.find(x=>x.id===p.id); if(ex){ if(ex.orig==null) ex.orig=ex.units; ex.units+=units; } else shipment.lines.push({id:p.id,sku:p.sku,units,orig:0});
+function fillApply(){ if(!fillCalc||!shipment) return; const {p,units}=fillCalc; const ex=shipment.lines.find(x=>x.id===p.id); if(ex){ if(ex.orig==null) ex.orig=ex.units; ex.units+=units; } else shipment.lines.push({id:p.id,sku:p.sku,units,orig:0,ts:Date.now()});
   store.set('shipment',shipment); document.getElementById('fill-find').value=''; fillCalc=null; renderAll(); feedback(`Added ${units} × ${p.name.slice(0,40)} — check the pallets`,'ok'); }
 function export2DW(withBoxes){ if(!shipment||!shipment.lines.length){feedback('Nothing to export','warn');return;}
   const hdr=['SKU','Quantity','Expiration date (MM-DD-YYYY)','Units per box','Number of boxes','Box width (in)','Box length (in)','Box height (in)','Box weight (lb)','Location','Notes','Expiry text','Title','UPC'];
