@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.23.6-shift';
+const VERSION='2.24.0-gapcols';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1230,7 +1230,7 @@ function layoutLayer(L,support){ const PL=settings.pl, PW=settings.pw; const out
   if(support&&L.kind!=='full'&&!L.gap){ const sub=layoutLayerIn(L,support.w,support.l); sub.forEach(b=>{ b.x+=support.x; b.y+=support.y; }); return sub; }
   return layoutLayerIn(L,PL,PW); }
 function layoutLayerIn(L,PL,PW){ const out=[]; const items=[];
-  L.comp.forEach(c=>{ for(let i=0;i<c.boxes;i++) items.push({p:c.p,inGap:!!c.inGap,ori:c.ori||null}); });
+  L.comp.forEach(c=>{ for(let i=0;i<c.boxes;i++) items.push({p:c.p,inGap:!!c.inGap,ori:c.ori||null,pos:c.pos?c.pos[i]||null:null,off:c.off||0,lz:c.lz||0}); });
   const main=items.filter(i=>!i.inGap), gapItems=items.filter(i=>i.inGap);
   const G=buildGroups().find(g=>g.name===L.group)||null; const gap=(L.gap&&G&&G.gap)?G.gap:null;
   let areaX=0, areaL=PL, areaW=PW; // main area after reserving a gap strip
@@ -1255,7 +1255,7 @@ function layoutLayerIn(L,PL,PW){ const out=[]; const items=[];
   else if(same&&fp.length){ gridPlace(fp,areaL,areaW,out); }
   else { // shelf packing: rows along the length, boxes oriented long side along x
     let x=0,y=0,rowH=0; fp.sort((A,B)=>(B.a*B.b)-(A.a*A.b)); for(const f of fp){ let bl=Math.max(f.a,f.b), bw=Math.min(f.a,f.b); if(x+bl>areaL){ x=0; y+=rowH; rowH=0; } if(y+bw>areaW){ out.push({x,y:Math.min(y,areaW-bw),w:bl,l:bw,h:f.p.h,p:f.p,over:true}); x+=bl; continue; } out.push({x,y,w:bl,l:bw,h:f.p.h,p:f.p}); x+=bl; rowH=Math.max(rowH,bw); } }
-  if(gap){ const strip=patStrip||((areaW<PW)?{x:0,y:areaW,w:PL,l:gap.w}:{x:areaL,y:0,w:gap.w,l:PW}); out.push({...strip,strip:true,label:`gap ${gap.w}"`}); let k=0; for(const gi of gapItems){ const o=gi.ori||gapOrient(gi.p,gap.w)||{across:Math.min(gi.p.l,gi.p.w),along:Math.max(gi.p.l,gi.p.w),h:gi.p.h}; const bw=o.across, bl=o.along; const along=strip.w>strip.l; const n=Math.max(1,Math.floor((along?strip.w:strip.l)/bl)); const i=k%n; out.push(along?{x:strip.x+i*bl,y:strip.y,w:bl,l:Math.min(bw,gap.w),h:o.h,p:gi.p,inGap:true,ori:o,stackN:Math.floor(k/n)}:{x:strip.x,y:strip.y+i*bl,w:Math.min(bw,gap.w),l:bl,h:o.h,p:gi.p,inGap:true,ori:o,stackN:Math.floor(k/n)}); k++; } }
+  if(gap){ const strip=patStrip||((areaW<PW)?{x:0,y:areaW,w:PL,l:gap.w}:{x:areaL,y:0,w:gap.w,l:PW}); out.push({...strip,strip:true,label:`gap ${gap.w}"`}); let k=0; for(const gi of gapItems){ const o=gi.ori||gapOrient(gi.p,gap.w)||{across:Math.min(gi.p.l,gi.p.w),along:Math.max(gi.p.l,gi.p.w),h:gi.p.h}; const bw=o.across, bl=o.along; const along=strip.w>strip.l; const n=Math.max(1,Math.floor((along?strip.w:strip.l)/bl)); const i=gi.pos?gi.pos.i:k%n; const off=gi.pos?gi.off:0; const ex=gi.pos?{z0:gi.pos.z,lz:gi.lz}:{}; out.push(along?{x:strip.x+off+i*bl,y:strip.y,w:bl,l:Math.min(bw,gap.w),h:o.h,p:gi.p,inGap:true,ori:o,stackN:Math.floor(k/n),...ex}:{x:strip.x,y:strip.y+off+i*bl,w:Math.min(bw,gap.w),l:bl,h:o.h,p:gi.p,inGap:true,ori:o,stackN:Math.floor(k/n),...ex}); k++; } }
   if(flip) out.forEach(b=>{ if(!b.strip) b.x=PL-b.x-b.w; });
   return out; }
 function layerSvg(L,size=170,support=null){ const PL=settings.pl,PW=settings.pw; const sc=size/PL; const boxes=layoutLayer(L,support);
@@ -1283,8 +1283,9 @@ function draw3d(){ const plan=buildPlan(); const P=plan&&plan.pallets.find(x=>x.
   // a strip holds one sub-column per filler footprint, side by side along its length (noodles flat, then apple butters in the end hole)
   let prevLay=null; for(const L of P.layers){ const lay=layoutLayer(L,prevLay&&P.layers[P.layers.indexOf(L)-1].kind!=='full'?supportOf(prevLay):null); const strip=lay.find(b=>b.strip); prevLay=lay;
     for(const b of lay){ if(b.strip) continue; const h=b.h||L.h; const ghost=F&&!(lit.has(L.idx)&&b.p.id===F.pid); const color=ghost?'#3a3f55':groupColor(b.p.a.box||b.p.name);
+      if(b.inGap&&strip&&b.z0!=null){ boxes.push({x:b.x,y:b.y,z:z-(b.lz||0)*L.h+b.z0,w:b.w,l:b.l,h:b.h||L.h,color,inGap:true,ghost}); continue; }
       if(b.inGap&&strip){ const key=`${strip.x.toFixed(0)},${strip.y.toFixed(0)}`; const horiz=strip.w>strip.l; const len=horiz?strip.w:strip.l; const c=cols[key]=cols[key]||{used:0,subs:[]};
-        const o=b.ori||gapOrient(b.p,horiz?strip.l:strip.w)||{across:Math.min(b.p.l||1,b.p.w||1),along:Math.max(b.p.l||1,b.p.w||1),h}; const along=o.along, across=o.across; let sub=c.subs.find(x=>x.along===along); if(!sub){ const rowN=Math.max(1,Math.floor((len-c.used)/along)); if(rowN<1) continue; sub={off:c.used,along,rowN,z:PD,k:0,rowH:0}; c.used+=rowN*along; c.subs.push(sub); }
+        const o=b.ori||gapOrient(b.p,horiz?strip.l:strip.w)||{across:Math.min(b.p.l||1,b.p.w||1),along:Math.max(b.p.l||1,b.p.w||1),h}; const along=o.along, across=o.across; let sub=c.subs.find(x=>x.along===along); if(!sub){ const rowN=Math.max(1,Math.floor((len-c.used)/along)); if(rowN<1) continue; sub={off:c.used,along,rowN,z,k:0,rowH:0}; c.used+=rowN*along; c.subs.push(sub); }
         if(sub.k>0&&sub.k%sub.rowN===0){ sub.z+=sub.rowH; sub.rowH=0; } const i=sub.k%sub.rowN; const pos=sub.off+i*along;
         const bx=horiz?{x:strip.x+pos,y:strip.y,w:along,l:Math.min(across,strip.l)}:{x:strip.x,y:strip.y+pos,w:Math.min(across,strip.w),l:along};
         boxes.push({...bx,z:sub.z,h:o.h,color,inGap:true,ghost}); sub.rowH=Math.max(sub.rowH,o.h); sub.k++; continue; }
@@ -1404,7 +1405,7 @@ function buildPlan(){ plan_endFilm=null;
           const rowN=Math.max(1,Math.floor(seg.len/along)), rows=Math.floor(seg.hLeft/o.h); const n=Math.min(it.boxes,rows*rowN); if(n<=0) continue;
           if(seg.along===0){ seg.along=along; const spare=seg.len-rowN*along; seg.len=rowN*along; if(spare>=5) segs.push({len:spare,hLeft:colH,along:0}); }
           it.boxes-=n; seg.hLeft-=Math.ceil(n/rowN)*o.h; taken.push({p:it.p,boxes:n,wtEach:it.wtEach,rowN,ori:o}); } }
-      if(taken.length){ gapFills.push({group:G.name,layers:full,fill:taken,perLayer:Math.ceil(taken.reduce((s,t)=>s+t.boxes,0)/full)}); }
+      if(taken.length){ gapFills.push({group:G.name,G,layers:full,fill:taken,perLayer:Math.ceil(taken.reduce((s,t)=>s+t.boxes,0)/full)}); }
     }
     for(const d of demand.values()) d.items=d.items.filter(it=>it.boxes>0);
   }
@@ -1417,7 +1418,7 @@ function buildPlan(){ plan_endFilm=null;
     for(let i=0;i<full;i++){ let need=per, comp=[], wt=0;
       while(need>0){ const it=pool.find(x=>x.boxes>0); const take=Math.min(need,it.boxes); it.boxes-=take; need-=take; wt+=take*it.wtEach; comp.push({p:it.p,boxes:take}); }
       const gf=gapFills.find(g=>g.group===G.name); let gap=null;
-      if(gf){ const li=i; if(li<gf.layers){ gap={comp:[],boxes:0,wt:0}; for(const t of gf.fill){ const share=Math.floor(t.boxes/gf.layers)+(li<t.boxes%gf.layers?1:0); if(share>0){ gap.comp.push({p:t.p,boxes:share,rowN:t.rowN,ori:t.ori}); gap.boxes+=share; gap.wt+=share*t.wtEach; } } wt+=gap.wt; } }
+      if(gf){ const li=i; if(li<gf.layers){ gap={comp:[],boxes:0,wt:0}; for(const t of gf.fill){ const share=Math.floor(t.boxes/gf.layers)+(li<t.boxes%gf.layers?1:0); if(share>0){ gap.comp.push({p:t.p,boxes:share,rowN:t.rowN,ori:t.ori,wtEach:t.wtEach}); gap.boxes+=share; gap.wt+=share*t.wtEach; } } wt+=gap.wt; } }
       layers.push({seq:layers.length,kind:'full',mixedFlavors:comp.length>1,group:G.name,h:G.h,wt,boxes:per+(gap?gap.boxes:0),comp:gap?comp.concat(gap.comp.map(c=>({...c,inGap:true}))):comp,gap,fragile:G.fragile,weak:G.weak,base:G.base,stack:G.stack||null,hi:G.hi||null,cap:G.load||((G.wt||0)<=settings.lightBox?Math.max(settings.loadMin,settings.loadFactor*wt):Infinity)}); }
     const rest=pool.filter(x=>x.boxes>0); if(rest.length) leftovers.push({G,items:rest,boxes:rest.reduce((s,i)=>s+i.boxes,0)});
   }
@@ -1471,14 +1472,21 @@ function buildPlan(){ plan_endFilm=null;
           if(partialBase&&up.kind==='full'&&!(isLight(up)&&(L.fill||0)>=0.5)&&!creative) return false; }
         const aboveOther=stack.slice(i+1).filter(x=>x.group!==L.group).reduce((s,x)=>s+x.wt,0); if(aboveOther>L.cap&&!relax) return false; }
       return true; };
-    const fitsOn=(P,L)=>{ // returns {idx,capHit} for the best position of L on P, or null
-      if(P.h+L.h>usable||P.wt+L.wt>pwtNet) return null;
+    // a part layer landing on an open part layer shares its level when the two footprints fit side by side (and on what's under them)
+    const mergeTop=(P,L)=>{ if(L.kind==='full'||L.topoff||L.base) return null; const B=P.layers[P.layers.length-1]; if(!B||B.kind==='full'||B.topoff||B.base) return null;
+      const under=P.layers.length>=2?P.layers[P.layers.length-2]:null; if(under&&under.kind!=='full'&&(under.fill||0)<(B.fill||0)+(L.fill||0)-0.05) return null;
+      if(((B.fill||0)+(L.fill||0))>0.92) return null; if((B.fragile&&L.wt>settings.frag)||(L.fragile&&B.wt>settings.frag)) return null; return B; };
+    const fitsOn=(P,L)=>{ // returns {idx,capHit,merge} for the best position of L on P, or null
+      const M=mergeTop(P,L); const dh=M?Math.max(0,L.h-M.h):L.h;
+      if(P.h+dh>usable||P.wt+L.wt>pwtNet) return null;
       if(L.base&&P.layers.some(x=>!x.base)) return null;
       if(L.hi&&P.layers.filter(x=>x.group===L.group&&x.kind==='full').length>=L.hi) return null; // group's own stack-height cap (e.g. WT-150 8 high)
       const cands=[]; if(!L.fragile){ P.layers.forEach((x,i)=>{ if(!x.fragile&&x.wt<L.wt&&!x.base&&!x.topoff) cands.push(i); }); } cands.push(P.layers.filter(x=>!x.topoff).length);
-      for(const idx of cands){ const stack=P.layers.slice(); stack.splice(idx,0,L); if(!stackOk(stack)) continue;
+      for(const idx of cands){ const stack=P.layers.slice(); const merge=!!(M&&idx===P.layers.length); if(!merge&&P.h+L.h>usable) continue;
+        if(merge){ stack[stack.length-1]={...M,h:Math.max(M.h,L.h),wt:M.wt+L.wt,fill:(M.fill||0)+(L.fill||0),kind:'mixed',cap:Math.min(M.cap,L.cap),fragile:M.fragile||L.fragile}; } else stack.splice(idx,0,L);
+        if(!stackOk(stack)) continue;
         let capHit=false; for(let i=0;i<stack.length;i++){ const aboveOther=stack.slice(i+1).filter(x=>x.group!==stack[i].group).reduce((s,x)=>s+x.wt,0); if(aboveOther>stack[i].cap){capHit=true;break;} }
-        return {idx,capHit}; }
+        return {idx,capHit,merge}; }
       return null; };
     const scoreOf=(P,L,f)=>{ const rem=Math.min((pwtNet-P.wt-L.wt)/pwtNet,(usable-P.h-L.h)/usable); const bal=(mode==='sequential'?-rem:rem)-(f.capHit?0.5:0)-(P.layers.length===0&&L.kind!=='full'?0.3:0);
       if(L.base&&L.kind==='full'){ const same=P.layers.filter(x=>x.base&&x.group===L.group).length;
@@ -1491,15 +1499,16 @@ function buildPlan(){ plan_endFilm=null;
       // any other full layer: stay with its group where one is already started (fewer splits, one product = one stack), else balance
       if(L.kind==='full'){ const same=P.layers.filter(x=>x.group===L.group&&x.kind==='full').length; if(same>0) return 1.5+same*0.05+bal; }
       // leftovers: join an open part layer on another pallet (side by side on one level) rather than perching alone on top of a clean stack
-      if(L.kind!=='full'&&!L.topoff&&f.idx===P.layers.length){ const top=P.layers[P.layers.length-1];
-        if(top&&top.kind!=='full'&&!top.topoff&&!top.base&&!L.base&&((top.fill||0)+(L.fill||0))<=0.92&&!(top.fragile&&L.wt>settings.frag)&&!(L.fragile&&top.wt>settings.frag)) return 2.5+bal;
-        const prods=new Set(P.layers.flatMap(x=>x.comp.filter(c=>!c.inGap).map(c=>c.p.id))); if((L.fill||0)<0.35&&prods.size===1&&P.layers.length>=3) return bal-1.2; }
+      if(L.kind!=='full'&&!L.topoff&&f.idx===P.layers.length){
+        if(f.merge) return 2.5+bal;
+        // a small leftover perched alone on a clean top is not a real build (can't wrap it, nobody stacks that way): last resort only
+        const prods=new Set(P.layers.flatMap(x=>x.comp.filter(c=>!c.inGap).map(c=>c.p.id))); if((L.fill||0)<0.35&&P.layers.length>=3) return bal-(prods.size===1?1.2:0.9); }
       // leftovers ride with the pallet that already carries the same product (one place to find it, one label)
       const sameProd=P.layers.some(x=>x.comp.some(c=>L.comp.some(d=>d.p===c.p))); return bal+(sameProd?0.4:0); };
     const putOn=(P,L,idx)=>{ P.layers.splice(idx,0,L); P.h+=L.h; P.wt+=L.wt;
       // two part layers landing on top of each other share one level when their footprints fit side by side — that's how they get built anyway
-      if(idx>0&&idx===P.layers.length-1&&L.kind!=='full'&&!L.topoff){ const B=P.layers[idx-1]; const under=idx>=2?P.layers[idx-2]:null; const fits=!under||under.kind==='full'||(under.fill||0)>=(B.fill||0)+(L.fill||0)-0.05;
-        if(fits&&B.kind!=='full'&&!B.topoff&&!B.base&&!L.base&&((B.fill||0)+(L.fill||0))<=0.92&&!(B.fragile&&L.wt>settings.frag)&&!(L.fragile&&B.wt>settings.frag)){
+      if(idx>0&&idx===P.layers.length-1&&L.kind!=='full'&&!L.topoff){ P.layers.splice(idx,1); const B=mergeTop(P,L); P.layers.splice(idx,0,L);
+        if(B){
         P.layers.splice(idx,1); P.h-=L.h; const nh=Math.max(B.h,L.h); P.h+=nh-B.h; B.h=nh; B.wt+=L.wt; B.boxes+=L.boxes; B.fill=(B.fill||0)+(L.fill||0); B.comp.push(...L.comp); B.kind='mixed'; B.group=[...new Set(B.group.split(' + ').concat(L.group.split(' + ')))].join(' + '); B.fragile=B.fragile||L.fragile; B.weak=B.weak||L.weak; B.cap=Math.min(B.cap,L.cap); B.uneven=B.uneven||Math.abs(B.h-L.h)>settings.tol; if(!B.notes.includes('side by side on one level')) B.notes.push('side by side on one level'); L.mergedInto=B; return; } }
       { for(let i=0;i<P.layers.length;i++){ const X=P.layers[i]; const aboveOther=P.layers.slice(i+1).filter(x=>x.group!==X.group).reduce((s,x)=>s+x.wt,0); if(aboveOther>X.cap&&!X.notes.includes('over load cap')) X.notes.push('over load cap'); }
         for(let i=0;i<P.layers.length-1;i++){ const X=P.layers[i],up=P.layers[i+1]; if(X.kind!=='full'&&(X.fill||0)<baseFill&&up.kind==='full'){ const n=isLight(up)?'light full layer on a partial one — level it by hand':'full layer on a partial one — level it out by hand'; if(!up.notes.includes(n)) up.notes.push(n);} } } };
@@ -1541,6 +1550,33 @@ function buildPlan(){ plan_endFilm=null;
         if(fail) break; }
       ps.forEach(P=>{ const T=P.layers.find(x=>x.topoff); if(T) T.group='top-off: '+[...new Set(T.comp.map(c=>c.p.a.box||c.p.name))].slice(0,3).join(' + '); }); }
     if(fail) continue;
+    // ── gap columns settle per pallet: the pre-pass only sized them; now each contiguous host stack actually built gets its own
+    // column from its bottom layer up, filled product by product in one block (never interleaved), never above the stack, weight-checked ──
+    if(!fail&&gapFills.length){
+      for(const gf of gapFills){ const G=gf.G; const pool=new Map();
+        for(const P of ps) for(const L of P.layers){ if(!L.gap||L.group!==G.name) continue;
+          for(const c of L.comp.filter(c=>c.inGap)){ const e=pool.get(c.p.id)||{p:c.p,boxes:0,wtEach:c.wtEach||0,ori:c.ori||null}; e.boxes+=c.boxes; pool.set(c.p.id,e); }
+          L.wt-=L.gap.wt; P.wt-=L.gap.wt; L.boxes-=L.gap.boxes; L.comp=L.comp.filter(c=>!c.inGap); L.gap=null; }
+        const items=[...pool.values()].map(it=>({it,o:it.ori||gapOrient(it.p,G.gap.w)})).filter(x=>x.o&&x.it.boxes>0);
+        items.sort((A,B)=>(B.o.tipped?0:1)-(A.o.tipped?0:1)||B.o.across-A.o.across||B.it.boxes-A.it.boxes);
+        const hostRuns=[]; for(const P of ps){ let cur=null; for(const L of P.layers){ if(L.kind==='full'&&L.group===G.name){ if(cur) cur.Ls.push(L); else { cur={P,Ls:[L]}; hostRuns.push(cur); } } else cur=null; } }
+        hostRuns.sort((a,b)=>b.Ls.length-a.Ls.length);
+        for(const run of hostRuns){ const colH=run.Ls.length*G.h; const segs=[{len:G.gap.l,z:0,along:0,off:0}];
+          for(const x of items){ if(x.it.boxes<=0) continue; const along=x.o.along;
+            const seg=segs.find(sg=>colH-sg.z>=x.o.h&&(sg.along===0||sg.along===along)&&sg.len>=along); if(!seg) continue;
+            const rowN=Math.max(1,Math.floor(seg.len/along)), rows=Math.floor((colH-seg.z)/x.o.h); const wCap=x.it.wtEach>0?Math.floor((pwtNet-run.P.wt)/x.it.wtEach):Infinity;
+            const n=Math.min(x.it.boxes,rows*rowN,wCap); if(n<=0) continue;
+            if(seg.along===0){ seg.along=along; const spare=seg.len-rowN*along; seg.len=rowN*along; if(spare>=5) segs.push({len:spare,z:0,along:0,off:seg.off+seg.len}); }
+            let left=n, r=0; while(left>0){ const z0=seg.z+r*x.o.h; const li=Math.min(run.Ls.length-1,Math.floor((z0+1e-6)/G.h)); const L=run.Ls[li]; const k=Math.min(rowN,left);
+              L.gap=L.gap||{comp:[],boxes:0,wt:0}; let c=L.gap.comp.find(y=>y.p===x.it.p&&y.off===seg.off); if(!c){ c={p:x.it.p,boxes:0,rowN,ori:x.o,wtEach:x.it.wtEach,off:seg.off,lz:li,pos:[]}; L.gap.comp.push(c); }
+              for(let i=0;i<k;i++) c.pos.push({z:z0,i}); c.boxes+=k; L.gap.boxes+=k; L.gap.wt+=k*x.it.wtEach; left-=k; r++; }
+            seg.z+=Math.ceil(n/rowN)*x.o.h; x.it.boxes-=n; run.P.wt+=n*x.it.wtEach; }
+          for(const L of run.Ls){ if(!L.gap) continue; L.comp=L.comp.concat(L.gap.comp.map(c=>({...c,inGap:true}))); L.boxes+=L.gap.boxes; L.wt+=L.gap.wt; } }
+        // fillers the real columns couldn't take: a small part layer of their own, placed like any leftover (open part layer first); last resort hand-fit
+        for(const x of items){ if(x.it.boxes<=0) continue; const p=x.it.p; const fp=(p.l||1)*(p.w||1); const Lx={seq:1e6,kind:'partial',group:p.a.box||p.name,h:p.h||1,wt:x.it.boxes*x.it.wtEach,boxes:x.it.boxes,comp:[{p,boxes:x.it.boxes}],fragile:!!p.a.fragile,weak:false,base:false,fill:x.it.boxes*fp/area,cap:Infinity,notes:['moved out of a full gap column']};
+          let best=null,bs=-Infinity,bi=-1; for(const P of ps){ const f=fitsOn(P,Lx); if(!f) continue; const sc=scoreOf(P,Lx,f); if(sc>bs){bs=sc;best=P;bi=f.idx;} }
+          if(best){ putOn(best,Lx,bi); } else { const P=ps.slice().sort((a,b)=>(pwtNet-b.wt)-(pwtNet-a.wt))[0]; P.fill.push({group:Lx.group,boxes:Lx.boxes,vol:Lx.h*fp*Lx.boxes,wt:Lx.wt,comp:Lx.comp}); } }
+      } }
     // hand-fit filler by remaining volume & weight
     let fok=true;
     for(const F of fl){ let vRem=vol(F), wRem=F.wt; const boxesTotal=F.boxes;
