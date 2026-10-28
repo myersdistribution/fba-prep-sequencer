@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.24.3-gapcols';
+const VERSION='2.24.4-marks';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -896,21 +896,23 @@ function shiftAdd(from,mins){ const c=shiftCfg(); if(c.e<=c.s||!c.days.length) r
 function fmtShift(dt){ const t=dt.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}).toLowerCase(); return dt.toDateString()===new Date().toDateString()?t:dt.toLocaleDateString([],{weekday:'short'})+' '+t; }
 function shiftDaysLabel(mins){ const c=shiftCfg(); const perDay=Math.max(1,c.e-c.s); return mins>perDay?` (~${(mins/perDay).toFixed(1)} shifts)`:''; }
 // Whole-job time plan: prep (from rates) + handling allowance per box (pick, move, stack, wrap) + film changes.
-// total = everything in the plan; remaining = skips prep for runs already marked prepped (their boxes still need stacking).
-// Clock times anchor on the Job started time when set (full plan), otherwise on now (remaining work).
+// total = everything in the plan; remaining = what the prepped marks say is still to do — a run marked prepped is finished
+// (prep and handling both drop out), a partly prepped run drops the prepped share. Logged clock time beyond what the
+// marks account for counts against the next runs, so the clocks never run ahead of reality.
 function timePlan(plan){
   if(!plan) return null;
   const hs=(settings.handleSec||0)/60, chg=settings.changeMin||0; const worked=shipment?workedMinutes():0, running=!!runningSession();
-  let cum=0, cumAll=0; const rows=[]; let prep=0,prepLeft=0,unknown=0,handling=0,changes=0,boxes=0,doneBoxes=0;
+  let cum=0, cumAll=0; const rows=[]; let prep=0,prepLeft=0,unknown=0,handling=0,handlingLeft=0,changes=0,boxes=0,doneBoxes=0;
   plan.seq.forEach(r=>{
     if(r.note){ if(r.note==='film'){ changes+=chg; cum+=chg; cumAll+=chg; rows.push({note:r,mins:chg,at:cum,atAll:cumAll}); } return; }
     const pm=minsForBoxes(r.p,r.boxes), hm=r.boxes*hs; boxes+=r.boxes; if(r.done) doneBoxes+=r.boxes;
-    if(pm==null) unknown+=r.boxes; else { prep+=pm; if(!r.done) prepLeft+=pm; }
-    handling+=hm; const inc=(!r.done&&pm!=null?pm:0)+hm, incAll=(pm||0)+hm; cum+=inc; cumAll+=incAll; rows.push({r,pm,hm,mins:incAll,at:cum,atAll:cumAll});
+    const doneFrac=r.done?1:(r.partPrepped&&r.units?Math.min(1,r.partPrepped/r.units):0); // share of this run already prepped
+    if(pm==null) unknown+=r.boxes; else { prep+=pm; prepLeft+=pm*(1-doneFrac); }
+    handling+=hm; handlingLeft+=hm*(1-doneFrac); const inc=((pm||0)+hm)*(1-doneFrac), incAll=(pm||0)+hm; cum+=inc; cumAll+=incAll; rows.push({r,pm,hm,mins:incAll,at:cum,atAll:cumAll,doneFrac});
   });
-  const total=prep+handling+changes; const byMarks=prepLeft+handling+changes; const remaining=worked>0?Math.min(byMarks,Math.max(0,total-worked)):byMarks;
-  // clock column: once time has been logged, each run's finish = its place in the full plan minus what's been worked; before that, from the staged marks
-  rows.forEach(x=>{ x.left=worked>0?Math.max(0,x.atAll-worked):x.at; });
+  const total=prep+handling+changes; const byMarks=prepLeft+handlingLeft+changes; const overrun=Math.max(0,worked-(total-byMarks)); const remaining=Math.max(0,byMarks-overrun);
+  // clock column: each run's finish = its place in the remaining work (by the marks) minus any logged time the marks don't yet account for
+  rows.forEach(x=>{ x.left=Math.max(0,x.at-overrun); });
   const anchor=nowMins(), doneAt=anchor+remaining;
   return {rows,prep,prepLeft,unknown,handling,changes,total,remaining,worked,running,boxes,doneBoxes,anchor,fromStart:false,doneAt,nChanges:plan.changeovers};
 }
@@ -926,7 +928,7 @@ function timeBreakdownHtml(tp){
   const legend=`<div class="help" style="margin-bottom:8px">Prep from timed rates (${settings.noneSec} sec/case default for stickerless) + ${settings.handleSec} sec/box handling allowance${tp.nChanges?` + ${tp.nChanges} film change${tp.nChanges>1?'s':''} × ${settings.changeMin} min`:''}. Clock column ${tp.running?'runs from now, with the '+fmtMin(tp.worked)+' already worked taken off':tp.worked?'assumes you resume now ('+fmtMin(tp.worked)+' already worked)':'assumes you start the job clock now'}, counting shift hours only (${settings.shiftStart}–${settings.shiftEnd}, work days on Settings). Change the allowances on Settings.</div>`;
   const body=tp.rows.map(x=>{ if(x.note) return `<tr><td colspan="3" style="color:var(--warn)">⟲ ${esc(x.note.text)}</td><td class="num">—</td><td class="num">—</td><td class="num">${fmtMin(x.mins)}</td><td class="num mono">${fmtShift(shiftAdd(new Date(),x.left))}</td></tr>`;
     const r=x.r, rate=rateOf(r.p); const tag=x.pm==null?'<span style="color:var(--warn)">no rate</span>':rate.dflt?'<span class="muted">default</span>':rate.manual?'<span class="muted">set</span>':`<span class="muted">${rate.runs} run${rate.runs>1?'s':''}</span>`;
-    return `<tr class="${r.done?'done':''}"><td class="wrap">${esc(r.p.name)}${r.done?' <span class="pill flag">prepped</span>':''}</td><td class="num">${r.units}</td><td class="num">${r.boxes}</td><td class="num">${x.pm==null?'—':fmtMin(x.pm)} <span style="font-size:10px">${tag}</span></td><td class="num">${fmtMin(x.hm)}</td><td class="num"><b>${fmtMin(x.mins)}</b></td><td class="num mono">${x.left<=0&&tp.worked?'<span class="muted">past</span>':fmtShift(shiftAdd(new Date(),x.left))}</td></tr>`; }).join('');
+    return `<tr class="${r.done?'done':''}"><td class="wrap">${esc(r.p.name)}${r.done?' <span class="pill flag">prepped</span>':x.doneFrac?` <span class="pill flag">${Math.round(x.doneFrac*100)}% prepped</span>`:''}</td><td class="num">${r.units}</td><td class="num">${r.boxes}</td><td class="num">${x.pm==null?'—':fmtMin(x.pm)} <span style="font-size:10px">${tag}</span></td><td class="num">${fmtMin(x.hm)}</td><td class="num"><b>${fmtMin(x.mins)}</b></td><td class="num mono">${r.done?'<span class="muted">done</span>':x.left<=0&&tp.worked?'<span class="muted">past</span>':fmtShift(shiftAdd(new Date(),x.left))}</td></tr>`; }).join('');
   const foot=`<tr style="font-weight:600"><td>Total</td><td></td><td class="num">${tp.boxes}</td><td class="num">${fmtMin(tp.prep)}</td><td class="num">${fmtMin(tp.handling)}</td><td class="num">${fmtMin(tp.total)}</td><td class="num mono">${fmtShift(shiftAdd(new Date(),tp.remaining))}</td></tr>`;
   return unk+legend+`<div class="tablewrap"><table><thead><tr><th>Run (prep order)</th><th class="num">Units</th><th class="num">Boxes</th><th class="num">Prep</th><th class="num">Handling</th><th class="num">Time</th><th class="num">Done at</th></tr></thead><tbody>${body}${foot}</tbody></table></div>`;
 }
