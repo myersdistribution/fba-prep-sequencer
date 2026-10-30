@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.26.0-altlayers';
+const VERSION='2.27.0-lock';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1081,7 +1081,7 @@ function sessionMins(x,now){ const end=x.stop||now||Date.now(); return Math.max(
 function workedMinutes(includeRunning=true){ const now=Date.now(); return sessions().reduce((t,x)=>t+(x.stop||includeRunning?sessionMins(x,now):0),0); }
 function jobMinutes(){ if(!shipment) return null; if(sessions().length){ const m=workedMinutes(true); return m>0?Math.round(m):null; }
   if(!shipment.started||!shipment.finished) return null; const [a,b]=[shipment.started,shipment.finished].map(t=>{const [h,m]=t.split(':').map(Number);return h*60+m;}); let d=b-a; if(d<0) d+=1440; return d>0?d:null; }
-function jobStart(){ if(!shipment) return; if(runningSession()){ feedback('The job clock is already running','warn'); return; } shipment.sessions=sessions(); shipment.sessions.push({id:'j'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),start:Date.now(),stop:null}); store.set('shipment',shipment); renderAll(); feedback('Job clock started','ok'); }
+function jobStart(){ if(!shipment) return; if(runningSession()){ feedback('The job clock is already running','warn'); return; } if(settings.autoLock!==false&&!lockedSnaps().length){ lockAll(true); } shipment.sessions=sessions(); shipment.sessions.push({id:'j'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),start:Date.now(),stop:null}); store.set('shipment',shipment); renderAll(); feedback('Job clock started','ok'); }
 function jobStop(){ const r=runningSession(); if(!r) return; r.stop=Date.now(); store.set('shipment',shipment); renderAll(); feedback(`Job clock stopped — ${fmtMin(sessionMins(r))} this session, ${fmtMin(workedMinutes())} total`,'ok'); }
 function jobSetTime(id,k,v){ const x=sessions().find(x=>x.id===id); if(!x) return; const t=v?new Date(v).getTime():null; if(k==='start'){ if(!t) return; x.start=t; if(x.stop&&x.stop<x.start) x.stop=x.start; } else { x.stop=t&&t>=x.start?t:null; } store.set('shipment',shipment); renderAll(); }
 async function jobDelete(id){ const x=sessions().find(x=>x.id===id); if(!x) return; if(!await ask(`Remove this session (${fmtDT(x.start)} → ${x.stop?fmtDT(x.stop):'running'}, ${fmtMin(sessionMins(x))})?`,{ok:'Remove'})) return; shipment.sessions=sessions().filter(y=>y.id!==id); store.set('shipment',shipment); renderAll(); }
@@ -1389,6 +1389,19 @@ function renderShipment(){
 }
 function pwtNetG(){ return settings.pwt-(settings.deckWt||0); }
 function grossWt(net){ return (net+(settings.deckWt||0))*(1+(settings.margin||0)/100); }
+// ── plan locking: a started pallet is frozen as a snapshot inside the shipment; the engine rebuilds it as-is and plans only the rest ──
+function serPallet(P){ const sc=cs=>cs.map(c=>({pid:c.p.id,boxes:c.boxes,inGap:!!c.inGap,rowN:c.rowN||null,ori:c.ori||null,wtEach:c.wtEach||null,off:c.off||0,strip:c.strip||0,lz:c.lz||0,pos:c.pos||null}));
+  const ser=L=>({kind:L.kind,group:L.group,h:L.h,wt:L.wt,boxes:L.boxes,fill:L.fill??null,base:!!L.base,fragile:!!L.fragile,weak:!!L.weak,stack:L.stack||null,hi:L.hi||null,cap:isFinite(L.cap)?L.cap:null,par:L.par??null,uneven:!!L.uneven,topoff:!!L.topoff,mixedFlavors:!!L.mixedFlavors,stage:!!L.stage,notes:(L.notes||[]).slice(),comp:sc(L.comp),gap:L.gap?{boxes:L.gap.boxes,wt:L.gap.wt,comp:sc(L.gap.comp)}:null});
+  return {n:P.n,ts:Date.now(),layers:P.layers.map(ser),fill:(P.fill||[]).map(F=>({group:F.group,boxes:F.boxes,vol:F.vol,wt:F.wt,comp:F.comp.map(c=>({pid:c.p.id,boxes:c.boxes}))}))}; }
+function deserPallet(S){ const byId=new Map(library.map(p=>[p.id,p])); let broken=false; const dc=cs=>(cs||[]).map(c=>{ const p=byId.get(c.pid); if(!p) broken=true; return {...c,p}; }).filter(c=>c.p);
+  const layers=(S.layers||[]).map(L=>{ const o={...L,comp:dc(L.comp),cap:L.cap==null?Infinity:L.cap,notes:(L.notes||[]).slice()}; o.gap=L.gap?{boxes:L.gap.boxes,wt:L.gap.wt,comp:dc(L.gap.comp)}:null; return o; });
+  if(broken||!layers.length) return null;
+  return {layers,h:layers.reduce((s,L)=>s+L.h,0),wt:layers.reduce((s,L)=>s+L.wt,0),fill:(S.fill||[]).map(F=>({...F,comp:dc(F.comp)})),baseQuota:{},locked:true,lockN:S.n,n:S.n}; }
+function lockedSnaps(){ return (shipment&&shipment.locked)||[]; }
+function lockPallet(n){ const plan=buildPlan(); const P=plan&&plan.pallets.find(x=>x.n===n); if(!P) return; shipment.locked=lockedSnaps().filter(x=>x.n!==n).concat([serPallet(P)]); store.set('shipment',shipment); renderAll(); feedback(`Pallet ${n} locked — it stays as planned until you unlock it`,'ok'); }
+function unlockPallet(n){ shipment.locked=lockedSnaps().filter(x=>x.n!==n); store.set('shipment',shipment); renderAll(); feedback(`Pallet ${n} unlocked — it will re-plan with the rest`,'ok'); }
+function lockAll(quiet){ const plan=buildPlan(); if(!plan||!plan.pallets.length) return; shipment.locked=plan.pallets.map(serPallet); store.set('shipment',shipment); if(!quiet){ renderAll(); feedback(`Plan locked — ${plan.pallets.length} pallet${plan.pallets.length>1?'s':''} frozen; quantity or product changes only re-plan unlocked pallets`,'ok'); } }
+async function unlockAll(){ if(!lockedSnaps().length) return; if(!await ask('Unlock every pallet and let the whole plan re-plan? Pallets already built may come out different.',{ok:'Unlock all'})) return; shipment.locked=[]; store.set('shipment',shipment); renderAll(); feedback('Plan unlocked','ok'); }
 // ── pallet engine ──
 let plan_endFilm=null;
 function buildPlan(){ plan_endFilm=null;
@@ -1397,15 +1410,20 @@ function buildPlan(){ plan_endFilm=null;
   const groups=buildGroups(), gmap=new Map(groups.map(g=>[g.name,g]));
   // demand per box group (ungrouped products become their own group)
   const demand=new Map(); const unplaced=[];
+  // locked pallets come back exactly as frozen; their boxes leave the demand, the rest is planned around them
+  const lockedPallets=lockedSnaps().map(deserPallet).filter(Boolean); const lockedBoxes={}; const lockConflicts=[];
+  lockedPallets.forEach(P=>{ P.layers.forEach(L=>L.comp.forEach(c=>{ lockedBoxes[c.p.id]=(lockedBoxes[c.p.id]||0)+c.boxes; })); P.fill.forEach(F=>F.comp.forEach(c=>{ lockedBoxes[c.p.id]=(lockedBoxes[c.p.id]||0)+c.boxes; })); });
+  const lineIds=new Set(shipment.lines.map(l=>l.id)); Object.keys(lockedBoxes).forEach(id=>{ if(!lineIds.has(id)){ const p=library.find(x=>x.id===id); lockConflicts.push({name:p?p.name:id,over:lockedBoxes[id],gone:true}); } });
   for(const l of shipment.lines){ const p=library.find(x=>x.id===l.id); if(!p) continue;
     if(!hasDims(p)){unplaced.push({name:p.name,boxes:boxesFor(p,l.units),why:'no box dims'});continue;}
     const key=p.a.box||('~'+p.id);
     if(!demand.has(key)){const G=gmap.get(key)||{name:p.name,l:p.l,w:p.w,h:p.h,wt:p.wt,layer:p.a.layer,load:p.a.load?parseFloat(p.a.load):null,fragile:p.a.fragile,weak:p.a.weak,tip:p.a.tip,varbox:p.a.varbox,base:p.a.base,gap:p.a.gap||null,gridFit:null};
       if(!G.gridFit) G.gridFit=Math.max(Math.floor(settings.pl/G.l)*Math.floor(settings.pw/G.w),Math.floor(settings.pl/G.w)*Math.floor(settings.pw/G.l));
       demand.set(key,{G,items:[]});}
-    const b=boxesFor(p,l.units), w=boxWeight(p,l.units);
-    demand.get(key).items.push({p,boxes:b,wtEach:b?w/b:0});
+    const bAll=boxesFor(p,l.units), wAll=boxWeight(p,l.units); const wtEach=bAll?wAll/bAll:0; const lb=lockedBoxes[p.id]||0; if(lb>bAll) lockConflicts.push({name:p.name,over:lb-bAll}); const b=Math.max(0,bAll-lb);
+    if(b>0) demand.get(key).items.push({p,boxes:b,wtEach});
   }
+  for(const [k,d] of [...demand]) if(!d.items.length) demand.delete(k);
   // gap columns (opt-in per shipment): full layers of a gap group offer a W×L×h column; small tip-able boxes fill it by volume
   const gapFills=[]; // {group, boxes:[{p,boxes}], perLayer, layers}
   if(shipment.useGaps){
@@ -1606,6 +1624,7 @@ function buildPlan(){ plan_endFilm=null;
   } }
   // (level/mode loop end)
   if(!pallets){ pallets=[]; layers.forEach(L=>unplaced.push({name:L.group,boxes:L.boxes,why:'could not place'})); level=LEVELS.length; }
+  pallets=lockedPallets.concat(pallets);
   for(const P of pallets){ P.wt+=P.fill.reduce((s,f)=>s+f.wt,0); const capI=P.layers.findIndex(L=>L.notes.includes('over load cap')), otherI=P.layers.findIndex(L=>L.notes.some(n=>n!=='over load cap'));
     const cands=[capI>=0?capI+2:Infinity,otherI>=0?otherI+1:Infinity,P.fill.length?P.layers.length+1:Infinity]; const cf=Math.min(...cands); P.creativeFrom=isFinite(cf)?Math.min(cf,P.layers.length+1):0; }
   const fitLevel=(level<LEVELS.length?LEVELS[level].name+(mode==='sequential'?' · sequential':''):'unplaced')+(target>target0?` (+${target-target0} pallet${target-target0>1?'s':''} over minimum)`:'');
@@ -1656,18 +1675,20 @@ function buildPlan(){ plan_endFilm=null;
   };
   // pass 1 with the provisional (fullest-first) order → number pallets by when the sequence finishes them → pass 2 in that order
   pallets.forEach(P=>{ P.nProd=new Set(P.layers.flatMap(L=>L.comp.filter(c=>!c.inGap).map(c=>c.p.id))).size; });
-  pallets.sort((a,b)=>(a.nProd-b.nProd)||(a.partials-b.partials)||(b.boxes-a.boxes)||b.wt-a.wt); pallets.forEach((P,i)=>{P.tmp=i;}); // cleanest first: solid stacks open before mixed ones
+  const lk=(a,b)=>(b.locked?1:0)-(a.locked?1:0)||((a.locked&&b.locked)?a.lockN-b.lockN:0); // locked pallets first, in their own numbers
+  pallets.sort((a,b)=>lk(a,b)||(a.nProd-b.nProd)||(a.partials-b.partials)||(b.boxes-a.boxes)||b.wt-a.wt); pallets.forEach((P,i)=>{P.tmp=i;}); // cleanest first: solid stacks open before mixed ones
   let built1=buildSeq(); { const fin=new Map(), sum=new Map(), cnt=new Map(); let i=0; built1.seq.forEach(m=>{ if(m.note) return; i++; m.dest.forEach(d=>{ fin.set(d.P,i); sum.set(d.P,(sum.get(d.P)||0)+i*d.boxes); cnt.set(d.P,(cnt.get(d.P)||0)+d.boxes); }); });
     const mean=P=>cnt.get(P)?sum.get(P)/cnt.get(P):1e9;
-    pallets.sort((a,b)=>(fin.get(a)??1e9)-(fin.get(b)??1e9)||mean(a)-mean(b)||a.nProd-b.nProd||b.boxes-a.boxes); pallets.forEach((P,i)=>{P.tmp=i;}); }
+    pallets.sort((a,b)=>lk(a,b)||(fin.get(a)??1e9)-(fin.get(b)??1e9)||mean(a)-mean(b)||a.nProd-b.nProd||b.boxes-a.boxes); pallets.forEach((P,i)=>{P.tmp=i;}); }
   const {seq,films,blocks:shrinkBlocks}=buildSeq();
-  pallets.forEach((P,i)=>{ P.n=i+1; P.layers.forEach((L,j)=>{ L.pallet=i+1; L.idx=j+1; }); });
+  { const used=new Set(pallets.filter(P=>P.locked).map(P=>P.lockN)); let k=1; pallets.forEach(P=>{ if(P.locked) P.n=P.lockN; else { while(used.has(k)) k++; P.n=k; used.add(k); } }); }
+  pallets.sort((a,b)=>a.n-b.n); pallets.forEach((P,i)=>{ P.tmp=i; P.layers.forEach((L,j)=>{ L.pallet=P.n; L.idx=j+1; }); });
   runs.forEach(r=>{ r.pallet=r.P.n; });
   seq.forEach(m=>{ if(!m.note) m.dest.sort((a,b)=>a.pallet-b.pallet||a.layer-b.layer); });
   const filmChanges=(films.length?(shrinkBlocks[0][0].setup===loaded?0:1):0)+Math.max(0,films.length-1);
   const setups=[...new Set(runs.map(r=>r.setup))];
   const endFilm=typeof plan_endFilm!=='undefined'?plan_endFilm:null;
-  return {pallets,unplaced,seq,setups,films,changeovers:filmChanges,endFilm,usable,minPallets,target,fitLevel,level};
+  return {pallets,unplaced,seq,setups,films,changeovers:filmChanges,endFilm,usable,minPallets,target,fitLevel,level,lockConflicts,lockedN:lockedPallets.length};
 }
 function renderPallets(){
   const plan=buildPlan(); const el=document.getElementById('pal-list'), st=document.getElementById('pal-stats');
@@ -1675,8 +1696,10 @@ function renderPallets(){
   const target=plan.target; const totalBoxes=plan.pallets.reduce((s,P)=>s+P.boxes+P.fill.reduce((x,f)=>x+f.boxes,0),0), totalWt=plan.pallets.reduce((s,P)=>s+P.wt,0);
   st.innerHTML=stat(plan.pallets.length,'pallets')+stat(plan.fitLevel,'fit',plan.level===0?'green':(plan.level>=4?'red':''))+stat(totalBoxes,'boxes placed')+stat(Math.round(plan.pallets.reduce((s,P)=>s+grossWt(P.wt),0)).toLocaleString(),'lb incl. decks')+stat(plan.pallets.reduce((s,P)=>s+P.layers.length,0),'layers')+(plan.unplaced.length?stat(plan.unplaced.reduce((s,u)=>s+u.boxes,0),'boxes unplaced','red'):'');
   const maps=document.getElementById('pal-maps').checked; document.getElementById('pal-legend').innerHTML=maps?paletteLegend(plan):'';
-  el.innerHTML=plan.pallets.map(P=>`<div class="pallet">
-    <h3><span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${palColor(P.n)};margin-right:6px"></span>Pallet ${P.n} <button class="btn" style="padding:3px 8px;font-size:10px" onclick="open3d(${P.n})">3D</button>${P.whole?` <span class="pill" style="border-color:${palColor(P.n)};color:${palColor(P.n)}">whole pallet · ${esc(P.whole)}</span>`:''}</span><span class="meta">${P.layers.length} layers · ${P.boxes} boxes · ${(P.h+settings.pd).toFixed(1)}" incl. deck · ~${Math.round(grossWt(P.wt))} lb incl. deck</span></h3>
+  const nLocked=plan.pallets.filter(P=>P.locked).length;
+  const lockBar=`<div class="card" style="padding:10px 14px"><div class="row" style="align-items:center;gap:8px;flex-wrap:wrap"><span class="help">${nLocked?`🔒 ${nLocked} of ${plan.pallets.length} pallets locked — changes only re-plan the unlocked ones`:'Plan re-plans from scratch on every change; lock it before you start building (the job clock does this on Start)'}</span><span style="flex:1"></span>${nLocked<plan.pallets.length?'<button class="btn" onclick="lockAll()">🔒 Lock plan</button>':''}${nLocked?'<button class="btn" onclick="unlockAll()">🔓 Unlock all</button>':''}</div>${(plan.lockConflicts||[]).length?`<div class="help" style="color:var(--warn);margin-top:6px">⚠ ${plan.lockConflicts.map(c=>c.gone?`${esc(c.name)} is on a locked pallet but no longer in the shipment (${c.over} boxes)`:`locked pallets hold ${c.over} more boxes of ${esc(c.name)} than the shipment has`).join(' · ')} — unlock that pallet to re-plan it</div>`:''}</div>`;
+  el.innerHTML=lockBar+plan.pallets.map(P=>`<div class="pallet"${P.locked?' style="border-color:var(--accent2)"':''}>
+    <h3><span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${palColor(P.n)};margin-right:6px"></span>Pallet ${P.n} ${P.locked?'<span class="pill" style="border-color:var(--accent2);color:var(--accent2)">🔒 locked</span>':''} <button class="btn" style="padding:3px 8px;font-size:10px" onclick="open3d(${P.n})">3D</button> <button class="btn" style="padding:3px 8px;font-size:10px" onclick="${P.locked?`unlockPallet(${P.n})`:`lockPallet(${P.n})`}">${P.locked?'🔓 Unlock':'🔒 Lock'}</button>${P.whole?` <span class="pill" style="border-color:${palColor(P.n)};color:${palColor(P.n)}">whole pallet · ${esc(P.whole)}</span>`:''}</span><span class="meta">${P.layers.length} layers · ${P.boxes} boxes · ${(P.h+settings.pd).toFixed(1)}" incl. deck · ~${Math.round(grossWt(P.wt))} lb incl. deck</span></h3>
     <div class="meta">Height ${Math.round((P.h+settings.pd)/settings.ph*100)}% · Weight ${Math.round((P.wt+(settings.deckWt||0))/settings.pwt*100)}% of limits${settings.margin?` <span class="help">(${Math.round(P.wt+(settings.deckWt||0))} lb planned, ~${Math.round(grossWt(P.wt))} with the ${settings.margin}% safety margin)</span>`:''} · <b style="color:var(--accent2)">room: ${(plan.usable-P.h).toFixed(1)}" · ${Math.round(pwtNetG()-P.wt)} lb</b></div>
     <div class="row" style="margin-top:8px;align-items:flex-end"><div class="field" style="max-width:130px"><label>Actual lb</label><input type="number" value="${(shipment.actual?.[P.n]||{}).wt??''}" onchange="setActual(${P.n},'wt',this.value)"></div><div class="field" style="max-width:130px"><label>Actual height (in)</label><input type="number" step="0.5" value="${(shipment.actual?.[P.n]||{}).h??''}" onchange="setActual(${P.n},'h',this.value)"></div><span class="help">planned ~${Math.round(grossWt(P.wt))} lb · ${(P.h+settings.pd).toFixed(1)}"</span></div>
     <div class="stack"><div class="deck"></div>${(()=>{ const sup=[]; let prev=null; P.layers.forEach((L,i)=>{ const sp=i>0&&P.layers[i-1].kind!=='full'?supportOf(prev):null; sup.push(sp); prev=layoutLayer(L,sp); }); return P.layers.map((L,li)=>`<div class="layer ${L.kind}${L.fragile?' fragile':''}" style="min-height:${Math.max(28,L.h*4)}px">
@@ -1702,7 +1725,7 @@ function renderPrep(){
   const atOf=new Map(tp.rows.filter(x=>x.r).map(x=>[x.r,x.left])); const anchor=tp.anchor;
   // pallet filter chips: show only the runs that touch one pallet, with that pallet's share of the boxes
   if(prepFilter&&!plan.pallets.some(P=>P.n===prepFilter)) prepFilter=null;
-  const chips=`<div class="row" style="margin-bottom:10px;align-items:center;gap:6px;flex-wrap:wrap"><span class="help">Show</span><button class="btn" style="padding:5px 10px;${!prepFilter?'background:var(--accent);color:#0f1117':''}" onclick="setPrepFilter(null)">All pallets</button>${plan.pallets.map(P=>`<button class="btn" style="padding:5px 10px;border-color:${palColor(P.n)};${prepFilter===P.n?'background:'+palColor(P.n)+';color:#0f1117':'color:'+palColor(P.n)}" onclick="setPrepFilter(${P.n})">P${P.n}${P.whole?' · '+esc(P.whole.slice(0,18)):''}</button>`).join('')}${prepFilter?`<span class="help">— runs touching P${prepFilter}; counts are this pallet's share, the step numbers are from the full order</span>`:''}</div>`;
+  const chips=`<div class="row" style="margin-bottom:10px;align-items:center;gap:6px;flex-wrap:wrap"><span class="help">Show</span><button class="btn" style="padding:5px 10px;${!prepFilter?'background:var(--accent);color:#0f1117':''}" onclick="setPrepFilter(null)">All pallets</button>${plan.pallets.map(P=>`<button class="btn" style="padding:5px 10px;border-color:${palColor(P.n)};${prepFilter===P.n?'background:'+palColor(P.n)+';color:#0f1117':'color:'+palColor(P.n)}" onclick="setPrepFilter(${P.n})">${P.locked?'🔒 ':''}P${P.n}${P.whole?' · '+esc(P.whole.slice(0,18)):''}</button>`).join('')}${prepFilter?`<span class="help">— runs touching P${prepFilter}; counts are this pallet's share, the step numbers are from the full order</span>`:''}</div>`;
   let n=0, html='<div class="card">'+jobClockHtml(true)+chips, clock=0;
   // heat-tunnel timing: if rates exist, say how far into the work to switch it on
   const heatIdx=plan.seq.findIndex(r=>r.note==='heat'); let heatAt=null; if(heatIdx>0){ let t=0; for(let i=0;i<heatIdx;i++){ const r=plan.seq[i]; if(!r.note&&!r.done){ const m=minsForBoxes(r.p,r.boxes); if(m!=null) t+=m; } } heatAt=t; }
