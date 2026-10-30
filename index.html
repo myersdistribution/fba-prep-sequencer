@@ -272,6 +272,7 @@ body.touch .dest{font-size:13px}
         <div class="row" style="margin-bottom:12px;align-items:center">
           <label class="help" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="ship-gaps" onchange="toggleGaps(this.checked)"> Fill gap columns (WT-150, PD-T048, gallons)</label>
         </div>
+        <div class="card" style="margin-bottom:12px"><div class="card-title"><span>Inbound pallets <span class="help">optional — list what's on each inbound pallet, top to bottom, and the prep order follows it</span></span><button class="btn" style="padding:5px 10px" onclick="inbAdd()">+ Inbound pallet</button></div><div id="inbound-list"></div><div id="inbound-stats" class="help" style="margin-top:6px"></div></div>
         <div class="row" style="margin-bottom:12px">
           <button class="btn btn-green" onclick="export2DW(false)">⇩ Export 2D Workflow file</button>
           <button class="btn" onclick="export2DW(true)">⇩ 2DW with box config</button>
@@ -601,7 +602,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.28.0-stage';
+const VERSION='2.29.0-inbound';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1378,7 +1379,7 @@ function renderShipment(){
     return `<tr class="${(shipment.picked||{})[p.id]?'done':''}"><td><input type="checkbox" style="width:22px;height:22px" ${(shipment.picked||{})[p.id]?'checked':''} onchange="setPicked('${p.id}',this.checked)"></td><td>${(()=>{ const n=(shipment.prepped||{})[p.id]||0; const full=n>=l.units&&l.units>0; return `<input type="checkbox" style="width:22px;height:22px" ${full?'checked':''} ${n&&!full?'data-part="1"':''} onchange="markPrepped('${p.id}',this.checked?${l.units}:0)" title="Already prepped and staged">${n&&!full?`<div class="muted" style="font-size:10px">${n} / ${l.units}</div>`:''}`; })()}</td><td><input type="checkbox" style="width:22px;height:22px" ${(shipment.stage||{})[p.id]?'checked':''} onchange="toggleStage('${p.id}',this.checked)" title="Prep first, before any pallet is opened"></td><td><button class="btn" style="padding:4px 8px" onclick="setLoc('${p.id}')">${p.loc?esc(p.loc):'<span class="muted">set</span>'}</button></td><td class="wrap">${esc(p.name)}</td><td class="mono muted">${esc(l.sku)}</td><td class="num"><input type="number" value="${l.units}" min="0" style="width:90px;text-align:right;padding:5px 8px;min-height:32px" onchange="setUnits('${l.id}',this.value)">${l.orig!=null&&l.orig!==l.units?`<div class="muted" style="font-size:10px">WO ${l.orig}</div>`:''}</td><td class="num">${casesFor(p,l.units)} <span class="muted">× ${p.upc||1}</span></td><td class="num">${b}${p.a.varbox?' <span class="pill">varbox</span>':''}</td><td>${p.a.box?`<span class="pill box">${esc(p.a.box)}</span>`:'<span class="muted">—</span>'}</td><td><span class="pill prep">${esc(prepLabel(p.a.prep))}</span></td><td class="num">${Math.round(w)}</td></tr>`;}).join('');
   document.querySelectorAll('#ship-tbody input[data-part]').forEach(cb=>{cb.indeterminate=true;});
   document.getElementById('unmatched-tbody').innerHTML=(shipment.unmatched||[]).map(u=>`<tr><td class="mono">${esc(u.sku)}</td><td class="num">${u.units}</td></tr>`).join('');
-  const tp=timePlan(buildPlan());
+  const planS=buildPlan(); const tp=timePlan(planS); renderInbound(planS);
   document.getElementById('ship-stats').innerHTML=stat(rows.length,'products')+stat(units,'units')+stat(boxes,'boxes')+stat(Math.round(wt).toLocaleString(),'lb')+stat(Math.max(1,Math.ceil(wt/pwtNetG())),'pallets (by weight, min)')+timeTiles(tp)+(shipment.unmatched.length?stat(shipment.unmatched.length,'unmatched','red'):'');
   document.getElementById('ship-time').innerHTML=timeBreakdownHtml(tp);
   // by setup
@@ -1389,6 +1390,20 @@ function renderShipment(){
   document.getElementById('group-tbody').innerHTML=Object.entries(B).sort((a,b)=>b[1].wt-a[1].wt).map(([k,v])=>{const G=gmap.get(k);const per=G?(G.layer||G.gridFit):null;const full=per?Math.floor(v.boxes/per):'—';const left=per?v.boxes%per:'—';
     return `<tr><td>${esc(k)}</td><td class="num">${v.boxes}</td><td class="num">${per??'—'}</td><td class="num">${full}</td><td class="num">${left}</td><td class="num">${Math.round(v.wt)}</td></tr>`;}).join('');
 }
+function inbList(){ if(!shipment) return []; shipment.inbound=shipment.inbound||[]; return shipment.inbound; }
+function inbSave(){ store.set('shipment',shipment); renderAll(); }
+function inbAdd(){ if(!shipment) return; const L=inbList(); L.push({id:'ib'+Date.now().toString(36),name:String.fromCharCode(65+L.length),items:[]}); inbSave(); }
+function inbRemove(i){ inbList().splice(i,1); inbSave(); }
+function inbName(i,v){ const ip=inbList()[i]; if(ip){ ip.name=v.trim(); store.set('shipment',shipment); } }
+function inbAddItem(i){ const ip=inbList()[i]; if(!ip) return; const el=document.getElementById('inb-find-'+i); const p=findByText(el.value); if(!p){ feedback('Pick a product from the list','warn'); return; } if(ip.items.some(x=>x.pid===p.id)){ feedback('Already on this pallet','warn'); return; } ip.items.push({pid:p.id}); el.value=''; inbSave(); }
+function inbDel(i,j){ inbList()[i].items.splice(j,1); inbSave(); }
+function inbMove(i,j,d){ const it=inbList()[i].items; const k=j+d; if(k<0||k>=it.length) return; [it[j],it[k]]=[it[k],it[j]]; inbSave(); }
+function inbCount(i,j,v){ const it=inbList()[i].items[j]; if(!it) return; const n=parseInt(v)||0; if(n>0) it.boxes=n; else delete it.boxes; store.set('shipment',shipment); }
+function renderInbound(plan){ const el=document.getElementById('inbound-list'), st=document.getElementById('inbound-stats'); if(!el) return; const L=inbList(); const inShip=new Set((shipment.lines||[]).map(l=>l.id));
+  el.innerHTML=L.length?L.map((ip,i)=>`<div class="pallet" style="margin-bottom:8px"><div class="row" style="align-items:center;gap:8px"><b>Inbound</b><input type="text" value="${esc(ip.name||'')}" style="max-width:140px" placeholder="name, e.g. Lipari A" onchange="inbName(${i},this.value)"><span class="help">top → bottom</span><span style="flex:1"></span><button class="btn" style="padding:4px 8px;color:var(--danger)" onclick="inbRemove(${i})">✕ Remove pallet</button></div>
+    ${ip.items.length?`<ol style="margin:8px 0 4px 18px;padding:0">${ip.items.map((it,j)=>{ const p=library.find(x=>x.id===it.pid); const nm=p?p.name:it.pid; return `<li style="margin:3px 0"><span class="row" style="align-items:center;gap:6px;flex-wrap:wrap">${esc(nm.slice(0,52))}${inShip.has(it.pid)?'':' <span class="pill" style="color:var(--warn);border-color:var(--warn)">not in this shipment — move aside</span>'}<input type="number" min="1" value="${it.boxes||''}" placeholder="cases" style="max-width:80px" title="optional — how many cases are on this pallet" onchange="inbCount(${i},${j},this.value)"><button class="btn" style="padding:3px 7px" onclick="inbMove(${i},${j},-1)">▲</button><button class="btn" style="padding:3px 7px" onclick="inbMove(${i},${j},1)">▼</button><button class="btn" style="padding:3px 7px;color:var(--danger)" onclick="inbDel(${i},${j})">✕</button></span></li>`; }).join('')}</ol>`:'<div class="help" style="margin:6px 0">Nothing listed yet — add the product on top first.</div>'}
+    <div class="row" style="align-items:flex-end;margin-top:4px"><div class="field" style="flex:1"><label>Add the next product down — SKU, ASIN or name</label><input type="search" id="inb-find-${i}" list="man-list" placeholder="e.g. hocks" onkeydown="if(event.key==='Enter'){inbAddItem(${i});}"></div><button class="btn" style="padding:8px 12px" onclick="inbAddItem(${i})">Add</button></div></div>`).join(''):'<div class="help">No inbound pallets listed. The prep order then follows the pallet builds as usual.</div>';
+  if(plan&&plan.staging&&plan.inboundN){ st.innerHTML=plan.staging.cost?`With this inbound order <b style="color:var(--warn)">${plan.staging.cost} boxes</b> get prepped before the layer they go to is reachable (they wait in staging). Arrangement chosen: ${plan.staging.mode==='arrival'?'arrival-aware':'standard'}, same pallet count as the best plan.`:`With this inbound order nothing has to wait in staging — every layer is reachable when its boxes come off the inbound pallet.`; } else st.innerHTML=''; }
 function toggleStage(id,on){ if(!shipment) return; shipment.stage=shipment.stage||{}; if(on) shipment.stage[id]=true; else delete shipment.stage[id]; store.set('shipment',shipment); renderAll(); }
 function pwtNetG(){ return settings.pwt-(settings.deckWt||0); }
 function grossWt(net){ return (net+(settings.deckWt||0))*(1+(settings.margin||0)/100); }
@@ -1482,15 +1497,18 @@ function buildPlan(){ plan_endFilm=null;
   
   // relaxation levels: 0 strict · 1 ignore light-box load caps · 2 tip:ok leftovers become hand-fit filler · 3 anything stacks on anything (fragile still protected)
   const LEVELS=[{name:'strict'},{name:'load caps relaxed'},{name:'light leftovers hand-fit'},{name:'creative stacking'}];
-  let pallets=null, level=0, filler=[];
+  let pallets=null, level=0, filler=[]; let planStaging=null;
   let mode='balanced';
-  for(let extra=0;extra<=3&&!pallets;extra++){ target=target0+extra;
-  for(let li=0;li<LEVELS.length*2&&!pallets;li++){ level=Math.floor(li/2); mode=li%2?'sequential':'balanced';
-    const lv=level; const relax=lv>=1, fillerMode=lv>=2, creative=lv>=3;
+  // inbound order: products listed on inbound pallets become reachable in that order (one inbound pallet at a time); unlisted products are free
+  const inbound=(shipment.inbound||[]).filter(x=>x&&x.items&&x.items.length); const arrival={}; inbound.forEach((ip,i)=>ip.items.forEach((it,j)=>{ if(arrival[it.pid]==null) arrival[it.pid]=i*1000+j; }));
+  const arrivalOf=p=>arrival[p.id]??null; const layerArrival=L=>{ let r=-1; L.comp.forEach(c=>{ const a=arrivalOf(c.p); if(a!=null&&a>r) r=a; }); return r; }; // -1 = all free
+  const attempt=(lv,mode,sortMode)=>{
+    const relax=lv>=1, fillerMode=lv>=2, creative=lv>=3;
     const baseFill=lv>=1?0.6:0.75; // once rules relax, a 60%-full heavy mixed layer can be a base under lighter full layers
     const rank=L=>(L.base?-2:(L.stage&&L.kind==='full')?-1:0)+(L.fragile?2:0)+((L.kind==='full'||(L.fill||0)>=baseFill)?0:1);
     const gw={}; layers.forEach(L=>{ if(L.kind==='full') gw[L.group]=Math.max(gw[L.group]||0,L.wt); }); const sortW=L=>L.kind==='full'?gw[L.group]:L.wt;
-    layers.sort((a,b)=>rank(a)-rank(b)||sortW(b)-sortW(a)||(a.seq||0)-(b.seq||0));
+    if(sortMode==='arrival') layers.sort((a,b)=>rank(a)-rank(b)||layerArrival(a)-layerArrival(b)||sortW(b)-sortW(a)||(a.seq||0)-(b.seq||0)); // what comes off the inbound pallets first goes low
+    else layers.sort((a,b)=>rank(a)-rank(b)||sortW(b)-sortW(a)||(a.seq||0)-(b.seq||0));
     let work=layers.map(L=>({...L,comp:L.comp.map(c=>({...c})),notes:[]})), fl=[];
     let topPool=[];
     if(creative){ // sparse leftovers of any height are held back and dropped into each pallet's headroom at the end (uneven top-off, hand-fit)
@@ -1591,7 +1609,7 @@ function buildPlan(){ plan_endFilm=null;
           const e=T.comp.find(x=>x.p===it.p); if(e) e.boxes++; else T.comp.push({p:it.p,boxes:1}); it.boxes--; }
         if(fail) break; }
       ps.forEach(P=>{ const T=P.layers.find(x=>x.topoff); if(T) T.group='top-off: '+[...new Set(T.comp.map(c=>c.p.a.box||c.p.name))].slice(0,3).join(' + '); }); }
-    if(fail) continue;
+    if(fail) return null;
     // ── gap columns settle per pallet: the pre-pass only sized them; now each contiguous host stack actually built gets its own
     // column from its bottom layer up, filled product by product in one block (never interleaved), never above the stack, weight-checked ──
     if(!fail&&gapFills.length){
@@ -1627,9 +1645,23 @@ function buildPlan(){ plan_endFilm=null;
         P.fill.push({group:F.group,boxes:Math.min(bx,boxesTotal),vol:vRem*frac,wt:wRem*frac,comp:F.comp}); vRem-=vRem*frac; wRem-=wRem*frac; if(frac>=1) break; }
       if(vRem>1e-6){ if(ps.length<target){ ps.push({layers:[],h:0,wt:0,fill:[{group:F.group,boxes:boxesTotal,vol:vRem,wt:wRem,comp:F.comp}]}); } else { fok=false; break; } }
     }
-    if(!fok) continue;
-    pallets=ps.filter(P=>P.layers.length||P.fill.length); filler=fl; break;
-  } }
+    if(!fok) return null;
+    return {ps:ps.filter(P=>P.layers.length||P.fill.length),fl};
+  };
+  // staging cost of an arrangement under the inbound order: boxes prepped before the layer they go to can be built
+  const stagingCost=(ps)=>{ if(!inbound.length) return 0; let cost=0; const builtN=new Map(ps.map(P=>[P,0]));
+    const avail=new Set(); const ready=L=>L.comp.every(c=>{ const a=arrivalOf(c.p); return a==null||avail.has(c.p.id)||stageSet.has(c.p.id); });
+    const advance=()=>{ let more=true; while(more){ more=false; for(const P of ps){ const i=builtN.get(P); if(i<P.layers.length&&ready(P.layers[i])){ builtN.set(P,i+1); more=true; } } } };
+    advance();
+    for(const ip of inbound) for(const it of ip.items){ if(avail.has(it.pid)) continue; avail.add(it.pid); advance();
+      for(const P of ps){ const i=builtN.get(P); P.layers.forEach((L,k)=>{ if(k>=i) L.comp.forEach(c=>{ if(c.p.id===it.pid&&!stageSet.has(it.pid)) cost+=c.boxes; }); }); } }
+    return cost; };
+  for(let extra=0;extra<=3&&!pallets;extra++){ target=target0+extra;
+    for(let lv=0;lv<LEVELS.length&&!pallets;lv++){ const cands=[];
+      const splitsOf=ps=>{ const by=new Map(); ps.forEach(P=>P.layers.forEach(L=>L.comp.forEach(c=>{ if(!c.inGap) (by.get(c.p.id)||by.set(c.p.id,new Set()).get(c.p.id)).add(P); }))); let n=0; by.forEach(set=>{ n+=set.size-1; }); return n; };
+      for(const md of ['balanced','sequential']) for(const sm of (inbound.length?['weight','arrival']:['weight'])){ const r=attempt(lv,md,sm); if(r) cands.push({r,md,sm,staged:stagingCost(r.ps),splits:splitsOf(r.ps)}); }
+      if(cands.length){ // fewest boxes waiting in staging wins; splitting a product over extra pallets costs about five staged boxes each, and the plain plan wins ties
+        cands.forEach(c=>{ c.cost=c.staged+5*c.splits; }); cands.sort((a,b)=>a.cost-b.cost||(a.sm==='weight'?-1:1)||(a.md==='balanced'?-1:1)); const best=cands[0]; pallets=best.r.ps; filler=best.r.fl; level=lv; mode=best.md; planStaging={cost:best.staged,splits:best.splits,mode:best.sm,tried:cands.map(c=>c.md+'/'+c.sm+':'+c.staged+'+'+c.splits)}; } } }
   // (level/mode loop end)
   if(!pallets){ pallets=[]; layers.forEach(L=>unplaced.push({name:L.group,boxes:L.boxes,why:'could not place'})); level=LEVELS.length; }
   pallets=lockedPallets.concat(pallets);
@@ -1682,7 +1714,7 @@ function buildPlan(){ plan_endFilm=null;
     const kindOf=x=>x.L?x.L.kind:'hand';
     const flushInserts=()=>{ let more=true; while(more){ more=false; for(const r of pendingIns){ if(insDone.has(r)) continue; if((built.get(r.P)||0)>=r.layer-1){ const grp=pendingIns.filter(x=>!insDone.has(x)&&x.P===r.P&&x.p===r.p&&(built.get(r.P)||0)>=x.layer-1&&kindOf(x)===kindOf(r)); grp.forEach(x=>insDone.add(x)); grp.forEach(x=>built.set(x.P,Math.max(built.get(x.P)||0,x.layer))); seq.push({note:'insert',insert:true,p:r.p,boxes:grp.reduce((s,x)=>s+x.boxes,0),dest:grp,mode:kindOf(r)==='full'?'stack':'part'}); more=true; break; } } } };
     flushInserts();
-    const push=m=>{ m.staged=false; m.dest.slice().sort((a,b)=>a.P.tmp-b.P.tmp||a.layer-b.layer).forEach(d=>{ if(!m.p.a.base&&d.layer>((built.get(d.P)||0)+1)) m.staged=true; built.set(d.P,Math.max(built.get(d.P)||0,d.layer)); }); seq.push(m);
+    const push=m=>{ m.staged=false; m.stagedOn=[]; m.dest.slice().sort((a,b)=>a.P.tmp-b.P.tmp||a.layer-b.layer).forEach(d=>{ if(!m.p.a.base&&d.L&&d.layer>((built.get(d.P)||0)+1)){ m.staged=true; if(!m.stagedOn.includes(d.P)) m.stagedOn.push(d.P); } built.set(d.P,Math.max(built.get(d.P)||0,d.layer)); }); seq.push(m);
       // stage-first fillers for the layers this run just built go in now, straight from staging
       { const hostLayers=new Set(m.dest.map(d=>d.L).filter(Boolean)); const byP=new Map(); stageRuns.filter(g=>g.inGap&&hostLayers.has(g.L)&&!insDone.has(g)).forEach(g=>{ insDone.add(g); const k=g.P.tmp+'|'+g.p.id; (byP.get(k)||byP.set(k,[]).get(k)).push(g); }); byP.forEach(grp=>seq.push({note:'insert',insert:true,p:grp[0].p,boxes:grp.reduce((s,x)=>s+x.boxes,0),dest:grp,mode:'gap'})); }
       flushInserts();
@@ -1691,12 +1723,22 @@ function buildPlan(){ plan_endFilm=null;
       const hostLayers=new Set(m.dest.map(d=>d.L).filter(Boolean)); const gs=gapRuns.filter(g=>hostLayers.has(g.L)&&!gapDone.has(g)); gs.forEach(g=>gapDone.add(g));
       mergeRuns(gs).forEach(gm=>{ gm.gapFill=true; gm.gapFor=m.p; if(isShrink(gm.setup)&&gm.setup!==curFilm&&!gm.done){ (deferred[gm.setup]=deferred[gm.setup]||[]).push(gm); gm.deferred=true; } else seq.push(gm); }); };
     const flushGaps=f=>{ const merged=[]; (deferred[f]||[]).forEach(gm=>{ const e=merged.find(x=>x.p===gm.p); if(e){ e.boxes+=gm.boxes; e.units+=gm.units; e.dest.push(...gm.dest); e.gapFor=null; } else merged.push(gm); }); merged.forEach(gm=>seq.push(gm)); delete deferred[f]; };
+    if(inbound.length){ // ── follow the inbound pallets: everything reachable from one inbound pallet, then the next; unlisted products slot in where they're first needed ──
+      const needOf=m=>{ const a=arrivalOf(m.p); if(a!=null) return a; let need=Infinity; m.dest.forEach(d=>{ let below=-1; d.P.layers.forEach((L,k)=>{ if(k+1<d.layer){ const la=layerArrival(L); if(la>below) below=la; } }); if(below<need) need=below; }); return need===Infinity?1e9:need+0.5; }; // a free product goes in as soon as the first layer it belongs to is reachable
+      const all=mergeRuns(mainRuns.filter(r=>!r.done)).concat(mergeRuns(mainRuns.filter(r=>r.done))); all.forEach(m=>{ m.need=needOf(m); });
+      const grpKey=m=>m.need>=1e9?1e9:Math.floor(m.need/1000); const keys=[...new Set(all.map(grpKey))].sort((a,b)=>a-b);
+      const emitShrink=m=>{ if(!m.done&&m.setup!==curFilm){ if(!heatOn){ seq.push({note:'heat',text:`Turn on the heat tunnel now — about ${settings.warmup} min to warm up before the first shrink run`}); heatOn=true; } if(m.setup!==(curFilm||loaded)) seq.push({note:'film',text:`Change film roll → ${SETUP_LABEL[m.setup]}`}); seq.push({note:'setup',text:SETUP_LABEL[m.setup]}); curFilm=m.setup; if(!films.includes(m.setup)) films.push(m.setup); flushGaps(curFilm); } push(m); };
+      for(const k of keys){ const grp=all.filter(m=>grpKey(m)===k).sort((a,b)=>a.need-b.need||(homeOf(a).tmp-homeOf(b).tmp)||(b.boxes-a.boxes)); const ip=inbound[k]; if(ip) seq.push({note:'setup',text:`Inbound pallet ${esc(ip.name||String(k+1))} — work it top to bottom`,inboundHead:true}); else if(k>=1e9&&grp.length) seq.push({note:'setup',text:'Everything else (loose stock, racks)',inboundHead:true});
+        grp.filter(m=>!isShrink(m.setup)||m.done).forEach(push);
+        const fs=[...new Set(grp.filter(m=>isShrink(m.setup)&&!m.done).map(m=>m.setup))].sort((a,b)=>(a===(curFilm||loaded)?-1:b===(curFilm||loaded)?1:0)); fs.forEach(f=>grp.filter(m=>m.setup===f&&!m.done).forEach(emitShrink)); }
+      if(heatOn){ seq.push({note:'heat',text:'Shrink work done — switch off the heat tunnel'}); plan_endFilm=(curFilm||stageFilm||'').replace('shrink-','')||null; curFilm=null; }
+    } else {
     before.forEach(push);
     if(blocks.length){ if(!heatOn){ seq.push({note:'heat',text:`Turn on the heat tunnel now — about ${settings.warmup} min to warm up before the first shrink run`}); heatOn=true; } if(blocks[0][0].setup!==(curFilm||loaded)) seq.push({note:'film',text:`Change film roll → ${SETUP_LABEL[blocks[0][0].setup]}${curFilm?'':' ('+(settings.film?settings.film+'" loaded now':'none loaded')+')'}`});
       blocks.forEach((blk,i)=>{ if(i>0) seq.push({note:'film',text:`Change film roll → ${SETUP_LABEL[blk[0].setup]}`}); seq.push({note:'setup',text:SETUP_LABEL[blk[0].setup]}); curFilm=blk[0].setup; flushGaps(curFilm); blk.forEach(push); });
       curFilm=null;
       seq.push({note:'heat',text:'Shrink work done — switch off the heat tunnel'}); plan_endFilm=blocks[blocks.length-1][0].setup.replace('shrink-',''); }
-    after.forEach(push);
+    after.forEach(push); }
     for(const f of Object.keys(deferred)){ seq.push({note:'film',text:`Change film roll → ${SETUP_LABEL[f]} (gap fills)`}); flushGaps(f); films.push(f); plan_endFilm=f.replace('shrink-',''); }
     // any gap fill whose host run was pre-staged still needs doing: append
     const leftover=gapRuns.filter(g=>!gapDone.has(g)); if(leftover.length) mergeRuns(leftover).forEach(gm=>{ gm.gapFill=true; seq.push(gm); });
@@ -1718,7 +1760,7 @@ function buildPlan(){ plan_endFilm=null;
   const filmChanges=seq.filter(x=>x.note==='film').length;
   const setups=[...new Set(runs.map(r=>r.setup))];
   const endFilm=typeof plan_endFilm!=='undefined'?plan_endFilm:null;
-  return {pallets,unplaced,seq,runs,setups,films,changeovers:filmChanges,endFilm,usable,minPallets,target,fitLevel,level,lockConflicts,lockedN:lockedPallets.length,stageN:stageSet.size};
+  return {pallets,unplaced,seq,runs,setups,films,changeovers:filmChanges,endFilm,usable,minPallets,target,fitLevel,level,lockConflicts,lockedN:lockedPallets.length,stageN:stageSet.size,inboundN:inbound.length,staging:planStaging};
 }
 function renderPallets(){
   const plan=buildPlan(); const el=document.getElementById('pal-list'), st=document.getElementById('pal-stats');
@@ -1762,10 +1804,11 @@ function renderPrep(){
   for(const r of plan.seq){
     if(r.note==='insert'){ const pn=r.dest[0].pallet; if(prepFilter==='staged'||!prepFilter||prepFilter===pn){ html+=`<div class="run" style="border-left:3px solid ${palColor(pn)};opacity:.9"><div class="n" style="color:var(--accent2)">⤵</div><div style="flex:1"><div><span class="pill" style="border-color:var(--accent2);color:var(--accent2)">from staging</span> ${esc(r.text)}</div><div class="row" style="margin-top:6px"><button class="btn" style="padding:5px 10px" onclick="openRun3d('${r.p.id}')">▦ Where</button></div></div></div>`; } continue; }
     if(r.note&&r.stageHead){ if(prepFilter==null||prepFilter==='staged'){ html+=`<div class="setup-hd" style="color:var(--accent2);font-weight:700"><span>★ ${esc(r.text)}</span></div>`; } continue; }
+    if(r.note&&r.inboundHead){ if(prepFilter==null){ html+=`<div class="setup-hd" style="color:var(--accent);font-weight:700"><span>📦 ${esc(r.text)}</span></div>`; } continue; }
     if(r.note){ if(r.note==='heat'&&heatAt!=null&&r.text.startsWith('Turn on')) r.text=`Turn on the heat tunnel about ${fmtMin(Math.max(0,heatAt-settings.warmup))} into the day (${settings.warmup} min warm-up before the first shrink run)`; const col=r.note==='film'?'var(--warn)':r.note==='heat'?'var(--danger)':'var(--accent2)'; html+=`<div class="setup-hd" style="color:${col}"><span>${r.note==='heat'?'🔥 ':r.note==='film'?'⟲ ':'▶ '}${esc(r.text)}</span></div>`; continue; }
     n++; if(prepFilter==='staged'&&!r.stageFirst) continue; if(typeof prepFilter==='number'&&!r.dest.some(d=>d.pallet===prepFilter)) continue; const em=r.done?null:minsForBoxes(r.p,r.boxes); if(em!=null) clock+=em;
     const pf=typeof prepFilter==='number'; const shareB=pf?r.dest.filter(d=>d.pallet===prepFilter).reduce((s,d)=>s+d.boxes,0):r.boxes, shareU=pf?(r.p.a.perbox===1?shareB:shareB*(r.p.upc||1)):r.units;
-    html+=`<div class="run ${r.done?'done':''}"><div class="n">${n}</div><div style="flex:1"><div>${r.stageFirst?`<span class="pill" style="border-color:var(--accent2);color:var(--accent2)">★ stage first</span> `:''}${r.gapFill?`<span class="pill" style="border-color:var(--warn);color:var(--warn)">gap fill${r.deferred?' first — before anything goes on':' — do now'}${r.gapFor?', into the '+esc(r.gapFor.name.replace(/\s*\(Pack.*$/,'').slice(0,30))+' layers':', into the gap columns'}</span> `:''}${r.p.loc?`<span class="pill" style="background:var(--accent);color:#0f1117;border-color:var(--accent);font-weight:700;font-size:12px;padding:3px 9px;margin-right:6px">BAY ${esc(r.p.loc)}</span>`:'<span class="pill" style="color:var(--warn);border-color:var(--warn);margin-right:6px" onclick="setLoc(\''+r.p.id+'\')">no bay</span>'}${esc(r.p.name)}<span class="mono muted">· ${shareU} units · <b style="color:var(--text)">${casesFor(r.p,shareU)} case${casesFor(r.p,shareU)===1?'':'s'}</b> of ${r.p.upc||1}${prepFilter&&shareB!==r.boxes?` <span style="color:var(--warn)">(${casesFor(r.p,r.units)} in the whole run)</span>`:''}${r.done?' · <span style="color:var(--accent2)">already prepped — stack from staging</span>':em!=null?` · ~${fmtMin(em)} prep${rateOf(r.p).dflt?' (default)':rateOf(r.p).manual?' (set)':''}`:' · <span style="color:var(--warn)">no rate yet</span>'}${atOf.has(r)?` · done ~<span style="color:var(--accent)">${fmtShift(shiftAdd(new Date(),atOf.get(r)))}</span>`:''}${r.partPrepped?` · <span style="color:var(--accent2)">${r.partPrepped} pre-prepped</span>`:''}</span> <span class="pill prep">${esc(prepLabel(r.p.a.prep))}</span>${r.staged?' <span class="pill flag">staged</span>':''}</div>
+    html+=`<div class="run ${r.done?'done':''}"><div class="n">${n}</div><div style="flex:1"><div>${r.stageFirst?`<span class="pill" style="border-color:var(--accent2);color:var(--accent2)">★ stage first</span> `:''}${r.staged&&!r.stageFirst?`<span class="pill" style="border-color:var(--warn);color:var(--warn)">⏸ ${(r.stagedOn||[]).map(P=>'P'+P.n).join(', ')} share waits in staging — that layer isn't reachable yet</span> `:''}${r.gapFill?`<span class="pill" style="border-color:var(--warn);color:var(--warn)">gap fill${r.deferred?' first — before anything goes on':' — do now'}${r.gapFor?', into the '+esc(r.gapFor.name.replace(/\s*\(Pack.*$/,'').slice(0,30))+' layers':', into the gap columns'}</span> `:''}${r.p.loc?`<span class="pill" style="background:var(--accent);color:#0f1117;border-color:var(--accent);font-weight:700;font-size:12px;padding:3px 9px;margin-right:6px">BAY ${esc(r.p.loc)}</span>`:'<span class="pill" style="color:var(--warn);border-color:var(--warn);margin-right:6px" onclick="setLoc(\''+r.p.id+'\')">no bay</span>'}${esc(r.p.name)}<span class="mono muted">· ${shareU} units · <b style="color:var(--text)">${casesFor(r.p,shareU)} case${casesFor(r.p,shareU)===1?'':'s'}</b> of ${r.p.upc||1}${prepFilter&&shareB!==r.boxes?` <span style="color:var(--warn)">(${casesFor(r.p,r.units)} in the whole run)</span>`:''}${r.done?' · <span style="color:var(--accent2)">already prepped — stack from staging</span>':em!=null?` · ~${fmtMin(em)} prep${rateOf(r.p).dflt?' (default)':rateOf(r.p).manual?' (set)':''}`:' · <span style="color:var(--warn)">no rate yet</span>'}${atOf.has(r)?` · done ~<span style="color:var(--accent)">${fmtShift(shiftAdd(new Date(),atOf.get(r)))}</span>`:''}${r.partPrepped?` · <span style="color:var(--accent2)">${r.partPrepped} pre-prepped</span>`:''}</span> <span class="pill prep">${esc(prepLabel(r.p.a.prep))}</span>${r.staged?' <span class="pill flag">staged</span>':''}</div>
       <div class="dest">${(()=>{ const byP={}; r.dest.forEach(d=>{(byP[d.pallet]=byP[d.pallet]||[]).push(d);}); return Object.keys(byP).map(n=>{ const ds=byP[n]; const P=plan.pallets.find(x=>x.n==n); const whole=P&&P.whole&&P.layers.every(L=>L.comp.every(c=>c.p===r.p)); const gapTot=ds.filter(d=>d.inGap).reduce((s,d)=>s+d.boxes,0); const gapTxt=(()=>{ if(!gapTot||!r.gapFill) return null; const rowN=Math.max(1,ds.find(d=>d.inGap&&d.rowN)?.rowN||1); const strips=new Set(ds.filter(d=>d.inGap).map(d=>d.strip||0)); const nS=Math.max(1,strips.size); const per=Math.ceil(gapTot/nS); return nS>1?`${nS} gap pockets · ${gapTot} (${Math.min(rowN,per)} per row, ${Math.ceil(per/Math.min(rowN,per))} high each)`:`gap column · ${gapTot} (${Math.min(rowN,gapTot)} per row, ${Math.ceil(gapTot/Math.min(rowN,gapTot))} high)`; })();
         const stageTxt=(()=>{ if(!r.stageFirst) return null; const by={}; ds.forEach(d=>{ (by[d.stageMode]=by[d.stageMode]||[]).push(d); }); const lay=xs=>{ const ls=[...new Set(xs.map(d=>d.layer))].sort((a,b)=>a-b); return ls.length>1?`L${ls[0]}–L${ls[ls.length-1]}`:`L${ls[0]}`; }; const parts=[]; if(by.build) parts.push(`build now ${lay(by.build)} (${by.build.reduce((s,d)=>s+d.boxes,0)})`); if(by.stack) parts.push(`stack on an empty pallet, moves to ${lay(by.stack)} later (${by.stack.reduce((s,d)=>s+d.boxes,0)})`); if(by.gap) parts.push(`set aside → gap ${lay(by.gap)} (${by.gap.reduce((s,d)=>s+d.boxes,0)})`); if(by.part) parts.push(`set aside → ${lay(by.part)} (${by.part.reduce((s,d)=>s+d.boxes,0)})`); if(by.hand) parts.push(`set aside → hand-fit (${by.hand.reduce((s,d)=>s+d.boxes,0)})`); return parts.join(' · '); })();
         return `<span class="pill" style="border-color:${palColor(+n)};color:${palColor(+n)};${typeof prepFilter==='number'&&+n!==prepFilter?'opacity:.35':''}">P${n}${stageTxt?' · '+stageTxt:whole?' · whole pallet':gapTxt?' · '+gapTxt:' '+ds.map(d=>`L${d.layer}${d.inGap?' gap':''} (${d.boxes})`).join(' ')}</span>`; }).join(' '); })()}</div><div class="row" style="margin-top:6px;align-items:center">${prepTimerHtml(r).replace('<div style="margin-top:6px">','<div>')}<button class="btn" style="padding:5px 10px" onclick="openRun3d('${r.p.id}')">▦ Where</button><button class="btn" style="padding:5px 10px;${r.done?'color:var(--accent2)':''}" onclick="markPrepped('${r.p.id}'${r.done?',0':''})">${r.done?'✓ Prepped':'Mark prepped'}</button>${trainBtn(r.p.id)}<button class="btn" style="padding:5px 10px;color:var(--danger)" onclick="openIssue('${r.p.id}',${r.units},'${esc(r.dest.map(d=>'P'+d.pallet+' L'+d.layer).join(', '))}')">⚑ Report issue</button></div></div></div>`; }
