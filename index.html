@@ -215,7 +215,7 @@ body.touch .dest{font-size:13px}
       </div>
       <div class="tablewrap">
         <table class="libtable">
-          <thead><tr><th>Product</th><th>Bay</th><th class="num">U/C</th><th>Box</th><th>Group · Layer</th><th>Prep</th><th>Flags</th><th></th></tr></thead>
+          <thead><tr><th>Product</th><th class="num">U/C</th><th>Box</th><th>Group · Layer</th><th>Prep</th><th>Flags</th><th></th></tr></thead>
           <tbody id="lib-tbody"></tbody>
         </table>
       </div>
@@ -267,12 +267,12 @@ body.touch .dest{font-size:13px}
           <div class="card-title"><span>Job clock</span><span class="help">start when work on this shipment begins, stop at breaks and end of day — the total adds up across days</span></div>
           <div id="job-clock"></div>
         </div>
-        <div class="row" style="margin-bottom:8px;align-items:center"><span class="help">Sort pick list by</span><select id="ship-sort" onchange="renderShipment()" style="max-width:160px"><option value="group">box group</option><option value="bay">bay / location</option></select></div>
+        <div class="row" style="margin-bottom:8px;align-items:center"><span class="help">Sort pick list by</span><select id="ship-sort" onchange="renderShipment()" style="max-width:160px"><option value="group">box group</option><option value="bay">bay</option><option value="inb">inbound order</option></select></div>
         <div class="stats" id="pick-stats"></div>
         <div class="row" style="margin-bottom:12px;align-items:center">
           <label class="help" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="ship-gaps" onchange="toggleGaps(this.checked)"> Fill gap columns (WT-150, PD-T048, gallons)</label>
         </div>
-        <div class="card" style="margin-bottom:12px"><div class="card-title"><span>Inbound pallets <span class="help">optional — list what's on each inbound pallet, top to bottom, and the prep order follows it</span></span><button class="btn" style="padding:5px 10px" onclick="inbAdd()">+ Inbound pallet</button></div><div id="inbound-list"></div><div id="inbound-stats" class="help" style="margin-top:6px"></div></div>
+        <div id="inbound-stats" class="help" style="margin-bottom:12px"></div>
         <div class="row" style="margin-bottom:12px">
           <button class="btn btn-green" onclick="export2DW(false)">⇩ Export 2D Workflow file</button>
           <button class="btn" onclick="export2DW(true)">⇩ 2DW with box config</button>
@@ -282,7 +282,7 @@ body.touch .dest{font-size:13px}
         </div>
         <div class="tablewrap">
           <table>
-            <thead><tr><th>Picked</th><th>Prepped</th><th title="Prep this product before the first pallet is opened — fillers and anything that goes to several pallets">Stage first</th><th>Bay</th><th>Product</th><th>SKU</th><th class="num">Units</th><th class="num">Cases</th><th class="num">Boxes</th><th>Group</th><th>Prep</th><th class="num">lb</th></tr></thead>
+            <thead><tr><th>Picked</th><th>Prepped</th><th title="Prep this product before the first pallet is opened — fillers and anything that goes to several pallets">Stage first</th><th title="Bay this product sits in for this shipment — clears with every new shipment">Bay</th><th title="Inbound pallet order: 1 is worked first. Products on the same inbound pallet share a number, and one number lives in one bay">Inb #</th><th>Product</th><th>SKU</th><th class="num">Units</th><th class="num">Cases</th><th class="num">Boxes</th><th>Group</th><th>Prep</th><th class="num">lb</th></tr></thead>
             <tbody id="ship-tbody"></tbody>
           </table>
         </div>
@@ -454,7 +454,6 @@ body.touch .dest{font-size:13px}
         <div class="field"><label>SKU</label><input type="text" id="ed-sku"></div>
         <div class="field"><label>ASIN</label><input type="text" id="ed-asin"></div>
         <div class="field" style="max-width:110px"><label>Units / carton</label><input type="number" id="ed-upc" min="1"></div>
-        <div class="field" style="max-width:140px"><label>Location (bay)</label><input type="text" id="ed-loc" placeholder="e.g. B7"></div>
       </div>
       <div class="row" style="margin-top:8px">
         <div class="field" style="max-width:100px"><label>Length</label><input type="number" id="ed-l" step="0.25"></div>
@@ -602,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.29.0-inbound';
+const VERSION='2.30.0-inbound-lines';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1028,7 +1027,7 @@ function closeTrain(){ document.getElementById('train-modal').classList.add('hid
 function renderTrainModal(){ const c=trainCard(trainOpen); if(!c) return; const p=c.kind==='product'?library.find(x=>x.id===c.id):null;
   document.getElementById('train-title').textContent=trainTitle(c);
   const kinds=Object.entries(TRAIN_KINDS).filter(([k])=>c.kind==='product'||k==='other'||k==='pallet').map(([k,l])=>`<button class="btn" onclick="trainAddPhoto('${c.id}','${k}')">📷 ${c.kind==='product'?l:(k==='other'?'Add photo':l)}</button>`).join('');
-  const meta=p?`<div class="help" style="margin-bottom:8px"><span class="mono">${esc(p.sku)} · ${esc(p.asin)}</span> · ${p.upc} per case · <span class="pill prep">${esc(prepLabel(p.a.prep))}</span>${p.a.box?` <span class="pill box">${esc(p.a.box)}</span>`:''}${p.a.layer?` · ${p.a.layer} per layer`:''}${p.a.base?' · <span class="pill">base — label in place</span>':''}${p.loc?` · bay ${esc(p.loc)}`:''}</div>`:'';
+  const meta=p?`<div class="help" style="margin-bottom:8px"><span class="mono">${esc(p.sku)} · ${esc(p.asin)}</span> · ${p.upc} per case · <span class="pill prep">${esc(prepLabel(p.a.prep))}</span>${p.a.box?` <span class="pill box">${esc(p.a.box)}</span>`:''}${p.a.layer?` · ${p.a.layer} per layer`:''}${p.a.base?' · <span class="pill">base — label in place</span>':''}</div>`:'';
   const photos=c.photos.length?`<div class="pgrid">${c.photos.map((ph,i)=>`<div class="ph" onclick="openPhoto('${c.id}',${i})"><img src="${photoUrl(ph,400)}" data-alt="${photoAlt(ph,400)}" onerror="imgFallback(this)" loading="lazy" alt=""><span class="k">${esc(TRAIN_KINDS[ph.kind]||ph.kind||'')}${ph.local?' · not uploaded':''}</span></div>`).join('')}</div>`:'<div class="help" style="margin:8px 0">No photos yet.</div>';
   const text=trainEditing?`<div class="field" style="margin-top:8px"><label>Steps — one per line</label><textarea id="tr-steps" rows="7" style="background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:15px;border-radius:6px;padding:8px 10px;width:100%">${esc(c.steps||'')}</textarea></div>
       <div class="field" style="margin-top:8px"><label>Watch out for</label><textarea id="tr-gotchas" rows="3" style="background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--sans);font-size:15px;border-radius:6px;padding:8px 10px;width:100%">${esc(c.gotchas||'')}</textarea></div>
@@ -1122,7 +1121,7 @@ function export2DW(withBoxes){ if(!shipment||!shipment.lines.length){feedback('N
   const hdr=['SKU','Quantity','Expiration date (MM-DD-YYYY)','Units per box','Number of boxes','Box width (in)','Box length (in)','Box height (in)','Box weight (lb)','Location','Notes','Expiry text','Title','UPC'];
   const rows=[['Required',null,'Optional',null,null,null,null,null,null,null,null,null,null,null],hdr];
   for(const l of shipment.lines){ const p=library.find(x=>x.id===l.id); if(!p||!l.units) continue;
-    const r=[p.sku,l.units,null,null,null,null,null,null,null,(p.loc||'').trim()||null,null,null,null,null]; // Location = bay from the library
+    const r=[p.sku,l.units,null,null,null,null,null,null,null,String(l.loc||'').trim()||null,null,null,null,null]; // Location = bay for this shipment
     if(withBoxes&&hasDims(p)&&!p.a.varbox){ const per=p.a.perbox===1?1:(p.upc||1); const full=Math.floor(l.units/per); if(full>0&&l.units%per===0){ r[3]=per; r[4]=full; r[5]=p.w; r[6]=p.l; r[7]=p.h; r[8]=p.wt; } }
     rows.push(r); }
   // start from 2D Workflow's own blank template so all three tabs are present, then fill the rows in
@@ -1160,9 +1159,9 @@ async function closeShipment(){ if(!shipment) return; if(!shipment.lines.length)
   const since=shipment.loadedTs||0; let timed=0; library.forEach(p=>(p.runs||[]).forEach(r=>{ if(r.ts>=since&&r.flag==='ok') timed+=r.mins; }));
   const nIssues=issues.filter(i=>i.shipId===shipment.shipId).length;
   const entry={ts:Date.now(),shipId:shipment.shipId,wo:shipment.wo||'',dest:shipment.dest||(shipment.info||{})['Destination']||'',units,boxes,pallets:plan.pallets.length,planWt:Math.round(plan.pallets.reduce((s,P)=>s+grossWt(P.wt),0)),actWt:actAll?Math.round(actWt):null,est:Math.round(est),estAll,timed:Math.round(timed),jobMins:jobMins,secPerBox:jobMins&&boxes?Math.round(jobMins*60/boxes):null,issues:nIssues,fit:plan.fitLevel,endFilm:plan.endFilm,days:jobDays()||null};
-  const detail={wo:shipment.wo||'',started:ss.length?fmtDT(ss[0].start):(shipment.started||''),finished:ss.length?fmtDT(ss[ss.length-1].stop):(shipment.finished||''),sessions:ss.map(x=>({start:fmtDT(x.start),stop:fmtDT(x.stop),mins:Math.round(sessionMins(x))})),days:jobDays(),pallets:plan.pallets.map(P=>({n:P.n,planWt:Math.round(grossWt(P.wt)),planH:(P.h+settings.pd).toFixed(1),actWt:(shipment.actual?.[P.n]||{}).wt||null,actH:(shipment.actual?.[P.n]||{}).h||null,boxes:P.boxes,layers:P.layers.length})),products:rows.map(x=>({name:x.p.name,units:x.l.units,boxes:boxesFor(x.p,x.l.units)})),issues:issues.filter(i=>i.shipId===shipment.shipId).map(i=>({type:i.type,qty:i.qty,name:i.name,text:i.text}))};
+  const detail={wo:shipment.wo||'',started:ss.length?fmtDT(ss[0].start):(shipment.started||''),finished:ss.length?fmtDT(ss[ss.length-1].stop):(shipment.finished||''),sessions:ss.map(x=>({start:fmtDT(x.start),stop:fmtDT(x.stop),mins:Math.round(sessionMins(x))})),days:jobDays(),pallets:plan.pallets.map(P=>({n:P.n,planWt:Math.round(grossWt(P.wt)),planH:(P.h+settings.pd).toFixed(1),actWt:(shipment.actual?.[P.n]||{}).wt||null,actH:(shipment.actual?.[P.n]||{}).h||null,boxes:P.boxes,layers:P.layers.length})),products:rows.map(x=>({name:x.p.name,units:x.l.units,boxes:boxesFor(x.p,x.l.units),bay:String(x.l.loc||'').trim()||null,inb:parseInt(x.l.inb)>0?parseInt(x.l.inb):null})),issues:issues.filter(i=>i.shipId===shipment.shipId).map(i=>({type:i.type,qty:i.qty,name:i.name,text:i.text}))};
   { const stg=shipment.stage||{}; const byP={}; (plan.runs||[]).forEach(r=>{ const o=byP[r.p.id]=byP[r.p.id]||{name:r.p.name,staged:!!stg[r.p.id],full:0,part:0,gap:0,hand:0,pallets:new Set()}; if(r.inGap) o.gap+=r.boxes; else if(!r.L) o.hand+=r.boxes; else if(r.L.kind==='full') o.full+=r.boxes; else o.part+=r.boxes; o.pallets.add(r.P.n); });
-    detail.staging=Object.values(byP).map(o=>({...o,pallets:o.pallets.size})); entry.staging=detail.staging; entry.stagedN=Object.keys(stg).length; }
+    detail.staging=Object.values(byP).map(o=>({...o,pallets:o.pallets.size})); entry.staging=detail.staging; entry.stagedN=Object.keys(stg).length; entry.inbound=inboundFromLines().map(ip=>({n:ip.n,bay:ip.loc||null,products:ip.items.map(it=>(library.find(p=>p.id===it.pid)||{}).name||it.pid)})); entry.inboundN=entry.inbound.length; }
   entry.snap=JSON.parse(JSON.stringify(shipment)); entry.filmBefore=settings.film; // full copy so the shipment can be reopened from the Log
   shipLog.unshift(entry); syncNotify({action:'close',entry:{...entry,snap:undefined},detail});
   store.set('log',shipLog); if(plan.endFilm){settings.film=plan.endFilm;store.set('settings',settings);} shipment=null; store.del('shipment'); renderAll(); switchTab('log'); feedback('Shipment closed and logged'+(plan.endFilm?` · film loaded set to ${plan.endFilm}"`:''),'ok'); }
@@ -1181,18 +1180,16 @@ function openEdit(id){ const p=library.find(x=>x.id===id); if(!p) return; editId
   document.getElementById('edit-name').innerHTML=`<b>${esc(p.name)}</b>${p.override?' <span class="pill flag">differs from SoStocked</span>':''}`;
   g('sku').value=p.sku; g('asin').value=p.asin||''; g('upc').value=p.upc; g('l').value=p.l??''; g('w').value=p.w??''; g('h').value=p.h??''; g('wt').value=p.wt??''; g('unitWt').value=p.unitWt??'';
   g('box').value=p.a.box||''; g('layer').value=p.a.layer||''; g('hi').value=p.a.hi||''; g('pat').value=p.a.patText||''; g('gapat').value=p.a.gapat||''; g('prep').value=p.a.prep||'sticker'; g('tip').value=p.a.tip||'no'; g('stack').value=p.a.stack||''; g('gap').value=p.a.gap?`${p.a.gap.w}x${p.a.gap.l}`:''; g('cap').value=p.a.cap||'';
-  g('loc').value=p.loc||''; g('base').checked=!!p.a.base; g('alt').checked=!!p.a.alt; g('perbox').checked=p.a.perbox===1; g('varbox').checked=!!p.a.varbox; g('fragile').checked=!!p.a.fragile; g('weak').checked=!!p.a.weak; g('est').checked=!!p.a.dimsEst;
+  g('base').checked=!!p.a.base; g('alt').checked=!!p.a.alt; g('perbox').checked=p.a.perbox===1; g('varbox').checked=!!p.a.varbox; g('fragile').checked=!!p.a.fragile; g('weak').checked=!!p.a.weak; g('est').checked=!!p.a.dimsEst;
   document.getElementById('box-list').innerHTML=[...new Set(library.map(x=>x.a.box).filter(Boolean))].sort().map(b=>`<option value="${esc(b)}">`).join('');
   document.getElementById('ed-clear').classList.toggle('hidden',!p.override); editPreview(); document.querySelectorAll('#edit-modal input,#edit-modal select').forEach(el=>el.oninput=editPreview); document.getElementById('edit-modal').classList.remove('hidden'); }
 function editRead(){ const g=k=>document.getElementById('ed-'+k); const gap=(g('gap').value.match(/([\d.]+)\s*x\s*([\d.]+)/i)||null);
   const a={case:(num(g('l').value)&&num(g('w').value)&&num(g('h').value))?{l:num(g('l').value),w:num(g('w').value),h:num(g('h').value),wt:num(g('wt').value)}:null,box:g('box').value.trim()||null,layer:parseInt(g('layer').value)||null,hi:parseInt(g('hi').value)||null,pat:(()=>{ const segs=g('pat').value.split('/').map(seg=>seg.split('|').map(t=>t.trim().match(/^(\d+)\s*([al])$/i)).filter(Boolean).map(m=>({n:+m[1],o:m[2].toLowerCase()}))).filter(sg=>sg.length); return segs.length?segs:null; })(),gapat:parseInt(g('gapat').value)||null,stack:parseInt(g('stack').value)||null,gap:gap?{w:parseFloat(gap[1]),l:parseFloat(gap[2])}:null,cap:parseInt(g('cap').value)||null,prep:g('prep').value,tip:g('tip').value,perbox:g('perbox').checked?1:null,base:g('base').checked,alt:g('alt').checked,varbox:g('varbox').checked,fragile:g('fragile').checked,weak:g('weak').checked,dimsEst:g('est').checked,dimsUnknown:false};
   return {sku:g('sku').value.trim(),asin:g('asin').value.trim(),upc:parseInt(g('upc').value)||1,l:num(g('l').value),w:num(g('w').value),h:num(g('h').value),wt:num(g('wt').value),unitWt:num(g('unitWt').value),attrs:attrString(a)}; }
 function editPreview(){ const e=editRead(); document.getElementById('ed-attr-preview').innerHTML='<span class="mono">'+esc(e.attrs)+'</span>'; }
-async function setLoc(id){ const p=library.find(x=>x.id===id); if(!p) return; const v=await askText(`Location for ${p.name.slice(0,40)}`,p.loc||''); if(v===null) return; p.loc=v.trim(); p.locTs=Date.now(); saveLibrary(); renderAll(); }
 function closeEdit(){ document.getElementById('edit-modal').classList.add('hidden'); editId=null; }
 function saveEdit(){ const p=library.find(x=>x.id===editId); if(!p) return; const e=editRead(); if(!e.sku){feedback('SKU is required','err');return;}
   const changed={}; for(const k of ['sku','asin','upc','l','w','h','wt','unitWt','attrs']){ if((p[k]??null)!==(e[k]??null)) changed[k]=e[k]; }
-  const loc=document.getElementById('ed-loc').value.trim(); if(loc!==(p.loc||'')){ p.loc=loc; p.locTs=Date.now(); saveLibrary(); }
   if(!Object.keys(changed).length){ closeEdit(); renderAll(); return; }
   if(changed.sku&&changed.sku!==p.sku&&!p.altSkus.includes(p.sku)) p.altSkus.push(p.sku);
   Object.assign(p,e); p.a=parseAttrs(p.attrs); p.override={...(p.override||{}),...changed,ts:Date.now()}; saveLibrary(); closeEdit(); renderAll(); feedback(`${p.name.slice(0,40)} updated — ${Object.keys(changed).filter(k=>k!=='ts').join(', ')}`,'ok'); }
@@ -1332,11 +1329,11 @@ function fmtDims(p){return hasDims(p)?`${p.l}×${p.w}×${p.h}`:'<span class="mut
 function flagsHtml(p){const f=[]; if(p.a.fragile)f.push('<span class="pill flag">fragile</span>'); if(p.a.weak)f.push('<span class="pill flag">weak</span>'); if(p.a.varbox)f.push('<span class="pill">varbox</span>'); if(p.a.base)f.push('<span class="pill">base</span>'); if(p.a.perbox===1)f.push('<span class="pill">1/box</span>'); if(p.a.tip!=='no')f.push(`<span class="pill tip">tip:${p.a.tip}</span>`); if(p.a.dimsUnknown)f.push('<span class="pill flag">measure</span>'); if(p.a.dimsEst)f.push('<span class="pill">dims est.</span>'); return f.join('');}
 function renderLibrary(){
   const q=(document.getElementById('lib-search').value||'').toLowerCase(), f=document.getElementById('lib-filter').value;
-  let rows=library.filter(p=>!q||[p.name,p.sku,p.asin,p.a.box,p.a.prep,p.loc].some(x=>String(x||'').toLowerCase().includes(q)));
+  let rows=library.filter(p=>!q||[p.name,p.sku,p.asin,p.a.box,p.a.prep].some(x=>String(x||'').toLowerCase().includes(q)));
   if(f==='nodims') rows=rows.filter(p=>!hasDims(p)); if(f==='nolayer') rows=rows.filter(p=>!p.a.layer); if(f==='fragile') rows=rows.filter(p=>p.a.fragile); if(f==='varbox') rows=rows.filter(p=>p.a.varbox); if(f==='edited') rows=rows.filter(p=>p.override);
   rows.sort((a,b)=>(a.a.box||'zzz').localeCompare(b.a.box||'zzz')||a.name.localeCompare(b.name));
   document.getElementById('lib-tbody').innerHTML=rows.map(p=>`<tr>
-    <td class="wrap"><div>${esc(p.name)}</div><div class="mono muted" style="font-size:10px">${esc(p.sku)} · ${esc(p.asin)}${p.altSkus.length?` · was ${esc(p.altSkus.join(', '))}`:''}</div></td><td>${p.loc?`<span class="pill">${esc(p.loc)}</span>`:''}</td>
+    <td class="wrap"><div>${esc(p.name)}</div><div class="mono muted" style="font-size:10px">${esc(p.sku)} · ${esc(p.asin)}${p.altSkus.length?` · was ${esc(p.altSkus.join(', '))}`:''}</div></td>
     <td class="num">${p.upc}</td><td class="mono" style="white-space:normal">${fmtDims(p)}${p.wt!=null?`<div class="muted" style="font-size:10px">${p.wt} lb</div>`:''}</td>
     <td>${p.a.box?`<span class="pill box">${esc(p.a.box)}</span>`:''}${p.a.layer?`<span class="pill">${p.a.layer}/layer</span>`:''}</td>
     <td><span class="pill prep">${esc(prepLabel(p.a.prep))}</span></td><td>${flagsHtml(p)}${p.override?'<span class="pill flag">edited</span>':''}</td><td><button class="btn" style="padding:4px 9px" onclick="openEdit('${p.id}')">✎</button></td></tr>`).join('')||'<tr><td colspan="8" class="muted">Nothing matches.</td></tr>';
@@ -1370,13 +1367,15 @@ function renderShipment(){
   renderJobClock();
   const pk=Object.keys(shipment.picked||{}).filter(id=>shipment.lines.some(l=>l.id===id)).length; document.getElementById('pick-stats').innerHTML=stat(`${pk} / ${shipment.lines.length}`,'lines picked',pk===shipment.lines.length&&pk?'green':'');
   const inf=shipment.info||{}; document.getElementById('ship-info').innerHTML=[inf['Destination']?'To '+esc(inf['Destination']):'',inf['Carrier']?esc(inf['Carrier']):'',inf['Tracking #s']?'PRO '+esc(inf['Tracking #s']):'',inf['Pallets']?'Amazon: '+esc(inf['Pallets'])+' pallets · '+esc(inf['Total Weight (lbs)']||'')+' lb':''].filter(Boolean).join(' · ');
+  if(!shipment.locMig){ shipment.lines.forEach(l=>{ if(l.loc==null){ const p=library.find(x=>x.id===l.id); if(p&&p.loc) l.loc=p.loc; } }); shipment.locMig=true; store.set('shipment',shipment); } // bays moved from the library to the shipment (v2.30) — carry the current ones over once
   const rows=shipment.lines.map(l=>({l,p:library.find(p=>p.id===l.id)})).filter(x=>x.p);
   let units=0,boxes=0,wt=0;
   const groups=buildGroups(), gmap=new Map(groups.map(g=>[g.name,g]));
-  const bySort=document.getElementById('ship-sort')?document.getElementById('ship-sort').value:'group'; rows.sort((a,b)=>bySort==='bay'?((a.p.loc||'zzz').localeCompare(b.p.loc||'zzz',undefined,{numeric:true})||a.p.name.localeCompare(b.p.name)):((a.p.a.box||'zzz').localeCompare(b.p.a.box||'zzz')));
+  const bySort=document.getElementById('ship-sort')?document.getElementById('ship-sort').value:'group'; const bayOf=l=>String(l.loc||'').trim()||'zzz', inbOf=l=>parseInt(l.inb)>0?parseInt(l.inb):1e9;
+  rows.sort((a,b)=>bySort==='bay'?(bayOf(a.l).localeCompare(bayOf(b.l),undefined,{numeric:true})||inbOf(a.l)-inbOf(b.l)||a.p.name.localeCompare(b.p.name)):bySort==='inb'?(inbOf(a.l)-inbOf(b.l)||bayOf(a.l).localeCompare(bayOf(b.l),undefined,{numeric:true})||a.p.name.localeCompare(b.p.name)):((a.p.a.box||'zzz').localeCompare(b.p.a.box||'zzz')));
   document.getElementById('ship-tbody').innerHTML=rows.map(({l,p})=>{
     const b=boxesFor(p,l.units),w=boxWeight(p,l.units); units+=l.units;boxes+=b;wt+=w;
-    return `<tr class="${(shipment.picked||{})[p.id]?'done':''}"><td><input type="checkbox" style="width:22px;height:22px" ${(shipment.picked||{})[p.id]?'checked':''} onchange="setPicked('${p.id}',this.checked)"></td><td>${(()=>{ const n=(shipment.prepped||{})[p.id]||0; const full=n>=l.units&&l.units>0; return `<input type="checkbox" style="width:22px;height:22px" ${full?'checked':''} ${n&&!full?'data-part="1"':''} onchange="markPrepped('${p.id}',this.checked?${l.units}:0)" title="Already prepped and staged">${n&&!full?`<div class="muted" style="font-size:10px">${n} / ${l.units}</div>`:''}`; })()}</td><td><input type="checkbox" style="width:22px;height:22px" ${(shipment.stage||{})[p.id]?'checked':''} onchange="toggleStage('${p.id}',this.checked)" title="Prep first, before any pallet is opened"></td><td><button class="btn" style="padding:4px 8px" onclick="setLoc('${p.id}')">${p.loc?esc(p.loc):'<span class="muted">set</span>'}</button></td><td class="wrap">${esc(p.name)}</td><td class="mono muted">${esc(l.sku)}</td><td class="num"><input type="number" value="${l.units}" min="0" style="width:90px;text-align:right;padding:5px 8px;min-height:32px" onchange="setUnits('${l.id}',this.value)">${l.orig!=null&&l.orig!==l.units?`<div class="muted" style="font-size:10px">WO ${l.orig}</div>`:''}</td><td class="num">${casesFor(p,l.units)} <span class="muted">× ${p.upc||1}</span></td><td class="num">${b}${p.a.varbox?' <span class="pill">varbox</span>':''}</td><td>${p.a.box?`<span class="pill box">${esc(p.a.box)}</span>`:'<span class="muted">—</span>'}</td><td><span class="pill prep">${esc(prepLabel(p.a.prep))}</span></td><td class="num">${Math.round(w)}</td></tr>`;}).join('');
+    return `<tr class="${(shipment.picked||{})[p.id]?'done':''}"><td><input type="checkbox" style="width:22px;height:22px" ${(shipment.picked||{})[p.id]?'checked':''} onchange="setPicked('${p.id}',this.checked)"></td><td>${(()=>{ const n=(shipment.prepped||{})[p.id]||0; const full=n>=l.units&&l.units>0; return `<input type="checkbox" style="width:22px;height:22px" ${full?'checked':''} ${n&&!full?'data-part="1"':''} onchange="markPrepped('${p.id}',this.checked?${l.units}:0)" title="Already prepped and staged">${n&&!full?`<div class="muted" style="font-size:10px">${n} / ${l.units}</div>`:''}`; })()}</td><td><input type="checkbox" style="width:22px;height:22px" ${(shipment.stage||{})[p.id]?'checked':''} onchange="toggleStage('${p.id}',this.checked)" title="Prep first, before any pallet is opened"></td><td><input type="text" inputmode="numeric" value="${esc(l.loc||'')}" placeholder="bay" style="width:64px;padding:5px 6px;min-height:36px;text-align:center;font-size:16px" onchange="setLineLoc('${l.id}',this.value)"></td><td><input type="number" inputmode="numeric" min="1" value="${l.inb||''}" placeholder="#" style="width:62px;padding:5px 6px;min-height:36px;text-align:center;font-size:16px${inbConflict(l)?';border-color:var(--danger);color:var(--danger)':''}" onchange="setLineInb('${l.id}',this.value)" title="${inbConflict(l)?'This inbound number is already in another bay':''}"></td><td class="wrap">${esc(p.name)}</td><td class="mono muted">${esc(l.sku)}</td><td class="num"><input type="number" value="${l.units}" min="0" style="width:90px;text-align:right;padding:5px 8px;min-height:32px" onchange="setUnits('${l.id}',this.value)">${l.orig!=null&&l.orig!==l.units?`<div class="muted" style="font-size:10px">WO ${l.orig}</div>`:''}</td><td class="num">${casesFor(p,l.units)} <span class="muted">× ${p.upc||1}</span></td><td class="num">${b}${p.a.varbox?' <span class="pill">varbox</span>':''}</td><td>${p.a.box?`<span class="pill box">${esc(p.a.box)}</span>`:'<span class="muted">—</span>'}</td><td><span class="pill prep">${esc(prepLabel(p.a.prep))}</span></td><td class="num">${Math.round(w)}</td></tr>`;}).join('');
   document.querySelectorAll('#ship-tbody input[data-part]').forEach(cb=>{cb.indeterminate=true;});
   document.getElementById('unmatched-tbody').innerHTML=(shipment.unmatched||[]).map(u=>`<tr><td class="mono">${esc(u.sku)}</td><td class="num">${u.units}</td></tr>`).join('');
   const planS=buildPlan(); const tp=timePlan(planS); renderInbound(planS);
@@ -1390,20 +1389,26 @@ function renderShipment(){
   document.getElementById('group-tbody').innerHTML=Object.entries(B).sort((a,b)=>b[1].wt-a[1].wt).map(([k,v])=>{const G=gmap.get(k);const per=G?(G.layer||G.gridFit):null;const full=per?Math.floor(v.boxes/per):'—';const left=per?v.boxes%per:'—';
     return `<tr><td>${esc(k)}</td><td class="num">${v.boxes}</td><td class="num">${per??'—'}</td><td class="num">${full}</td><td class="num">${left}</td><td class="num">${Math.round(v.wt)}</td></tr>`;}).join('');
 }
-function inbList(){ if(!shipment) return []; shipment.inbound=shipment.inbound||[]; return shipment.inbound; }
-function inbSave(){ store.set('shipment',shipment); renderAll(); }
-function inbAdd(){ if(!shipment) return; const L=inbList(); L.push({id:'ib'+Date.now().toString(36),name:String.fromCharCode(65+L.length),items:[]}); inbSave(); }
-function inbRemove(i){ inbList().splice(i,1); inbSave(); }
-function inbName(i,v){ const ip=inbList()[i]; if(ip){ ip.name=v.trim(); store.set('shipment',shipment); } }
-function inbAddItem(i){ const ip=inbList()[i]; if(!ip) return; const el=document.getElementById('inb-find-'+i); const p=findByText(el.value); if(!p){ feedback('Pick a product from the list','warn'); return; } if(ip.items.some(x=>x.pid===p.id)){ feedback('Already on this pallet','warn'); return; } ip.items.push({pid:p.id}); el.value=''; inbSave(); }
-function inbDel(i,j){ inbList()[i].items.splice(j,1); inbSave(); }
-function inbMove(i,j,d){ const it=inbList()[i].items; const k=j+d; if(k<0||k>=it.length) return; [it[j],it[k]]=[it[k],it[j]]; inbSave(); }
-function inbCount(i,j,v){ const it=inbList()[i].items[j]; if(!it) return; const n=parseInt(v)||0; if(n>0) it.boxes=n; else delete it.boxes; store.set('shipment',shipment); }
-function renderInbound(plan){ const el=document.getElementById('inbound-list'), st=document.getElementById('inbound-stats'); if(!el) return; const L=inbList(); const inShip=new Set((shipment.lines||[]).map(l=>l.id));
-  el.innerHTML=L.length?L.map((ip,i)=>`<div class="pallet" style="margin-bottom:8px"><div class="row" style="align-items:center;gap:8px"><b>Inbound</b><input type="text" value="${esc(ip.name||'')}" style="max-width:140px" placeholder="name, e.g. Lipari A" onchange="inbName(${i},this.value)"><span class="help">top → bottom</span><span style="flex:1"></span><button class="btn" style="padding:4px 8px;color:var(--danger)" onclick="inbRemove(${i})">✕ Remove pallet</button></div>
-    ${ip.items.length?`<ol style="margin:8px 0 4px 18px;padding:0">${ip.items.map((it,j)=>{ const p=library.find(x=>x.id===it.pid); const nm=p?p.name:it.pid; return `<li style="margin:3px 0"><span class="row" style="align-items:center;gap:6px;flex-wrap:wrap">${esc(nm.slice(0,52))}${inShip.has(it.pid)?'':' <span class="pill" style="color:var(--warn);border-color:var(--warn)">not in this shipment — move aside</span>'}<input type="number" min="1" value="${it.boxes||''}" placeholder="cases" style="max-width:80px" title="optional — how many cases are on this pallet" onchange="inbCount(${i},${j},this.value)"><button class="btn" style="padding:3px 7px" onclick="inbMove(${i},${j},-1)">▲</button><button class="btn" style="padding:3px 7px" onclick="inbMove(${i},${j},1)">▼</button><button class="btn" style="padding:3px 7px;color:var(--danger)" onclick="inbDel(${i},${j})">✕</button></span></li>`; }).join('')}</ol>`:'<div class="help" style="margin:6px 0">Nothing listed yet — add the product on top first.</div>'}
-    <div class="row" style="align-items:flex-end;margin-top:4px"><div class="field" style="flex:1"><label>Add the next product down — SKU, ASIN or name</label><input type="search" id="inb-find-${i}" list="man-list" placeholder="e.g. hocks" onkeydown="if(event.key==='Enter'){inbAddItem(${i});}"></div><button class="btn" style="padding:8px 12px" onclick="inbAddItem(${i})">Add</button></div></div>`).join(''):'<div class="help">No inbound pallets listed. The prep order then follows the pallet builds as usual.</div>';
-  if(plan&&plan.staging&&plan.inboundN){ st.innerHTML=plan.staging.cost?`With this inbound order <b style="color:var(--warn)">${plan.staging.cost} boxes</b> get prepped before the layer they go to is reachable (they wait in staging). Arrangement chosen: ${plan.staging.mode==='arrival'?'arrival-aware':'standard'}, same pallet count as the best plan.`:`With this inbound order nothing has to wait in staging — every layer is reachable when its boxes come off the inbound pallet.`; } else st.innerHTML=''; }
+// ── inbound order lives on the shipment lines: l.loc = bay for this shipment, l.inb = inbound pallet number (1 = worked first). Products on one inbound pallet share a number; a number lives in exactly one bay.
+function inbBayOf(n,exceptId){ n=parseInt(n); if(!(n>0)) return ''; for(const l of (shipment?.lines||[])){ if(l.id!==exceptId&&parseInt(l.inb)===n&&String(l.loc||'').trim()) return String(l.loc).trim(); } return ''; }
+function inbConflict(l){ const n=parseInt(l.inb); if(!(n>0)) return false; const mine=String(l.loc||'').trim(); const other=inbBayOf(n,l.id); return !!(mine&&other&&mine!==other); }
+function setLineLoc(id,v){ if(!shipment) return; const l=shipment.lines.find(x=>x.id===id); if(!l) return; v=String(v||'').trim(); l.loc=v; l.ts=Date.now();
+  const n=parseInt(l.inb); if(n>0&&v){ let moved=0; shipment.lines.forEach(o=>{ if(o!==l&&parseInt(o.inb)===n&&String(o.loc||'').trim()!==v){ o.loc=v; o.ts=Date.now(); moved++; } }); if(moved) feedback(`Inbound #${n} moved to bay ${v} — ${moved} other line${moved>1?'s':''} on that pallet updated`,'ok'); }
+  store.set('shipment',shipment); renderAll(); }
+function setLineInb(id,v){ if(!shipment) return; const l=shipment.lines.find(x=>x.id===id); if(!l) return; const n=parseInt(v);
+  if(!(n>0)){ delete l.inb; l.ts=Date.now(); store.set('shipment',shipment); renderAll(); return; }
+  const mine=String(l.loc||'').trim(), other=inbBayOf(n,l.id);
+  if(mine&&other&&mine!==other){ feedback(`Inbound #${n} is already in bay ${other} — one inbound pallet, one bay. Clear this line's bay to join it, or use another number`,'warn'); renderAll(); return; }
+  l.inb=n; l.ts=Date.now();
+  if(!mine&&other){ l.loc=other; feedback(`Bay ${other} filled in from inbound #${n}`,'ok'); }
+  else if(mine&&!other){ shipment.lines.forEach(o=>{ if(o!==l&&parseInt(o.inb)===n&&!String(o.loc||'').trim()){ o.loc=mine; o.ts=Date.now(); } }); }
+  store.set('shipment',shipment); renderAll(); }
+function inboundFromLines(){ const by=new Map(); (shipment?.lines||[]).forEach(l=>{ const n=parseInt(l.inb); if(!(n>0)||!(l.units>0)) return; const e=by.get(n)||{n,loc:'',items:[]}; if(!e.loc&&String(l.loc||'').trim()) e.loc=String(l.loc).trim(); e.items.push({pid:l.id}); by.set(n,e); });
+  return [...by.values()].sort((a,b)=>a.n-b.n).map(e=>({id:'ib'+e.n,n:e.n,loc:e.loc,name:'#'+e.n+(e.loc?' · bay '+e.loc:''),items:e.items})); }
+function renderInbound(plan){ const st=document.getElementById('inbound-stats'); if(!st) return; const inb=inboundFromLines(); const conflicts=(shipment?.lines||[]).filter(inbConflict).length;
+  if(!inb.length){ st.innerHTML=''; return; }
+  const list=inb.map(ip=>`<b>#${ip.n}</b>${ip.loc?` bay ${esc(ip.loc)}`:''} (${ip.items.length})`).join(' → ');
+  st.innerHTML=`📦 Inbound order: ${list}.${conflicts?` <span style="color:var(--danger)">${conflicts} line${conflicts>1?'s':''} with an inbound number in two bays — fix the red cells.</span>`:''}${plan&&plan.staging?(plan.staging.cost?` With this order <b style="color:var(--warn)">${plan.staging.cost} boxes</b> get prepped before the layer they go to is reachable (they wait in staging); arrangement: ${plan.staging.mode==='arrival'?'arrival-aware':'standard'}, same pallet count.`:' Nothing has to wait in staging — every layer is reachable when its boxes come off the inbound pallet.'):''}`; }
 function toggleStage(id,on){ if(!shipment) return; shipment.stage=shipment.stage||{}; if(on) shipment.stage[id]=true; else delete shipment.stage[id]; store.set('shipment',shipment); renderAll(); }
 function pwtNetG(){ return settings.pwt-(settings.deckWt||0); }
 function grossWt(net){ return (net+(settings.deckWt||0))*(1+(settings.margin||0)/100); }
@@ -1500,7 +1505,7 @@ function buildPlan(){ plan_endFilm=null;
   let pallets=null, level=0, filler=[]; let planStaging=null;
   let mode='balanced';
   // inbound order: products listed on inbound pallets become reachable in that order (one inbound pallet at a time); unlisted products are free
-  const inbound=(shipment.inbound||[]).filter(x=>x&&x.items&&x.items.length); const arrival={}; inbound.forEach((ip,i)=>ip.items.forEach((it,j)=>{ if(arrival[it.pid]==null) arrival[it.pid]=i*1000+j; }));
+  const inbound=inboundFromLines(); const arrival={}; inbound.forEach((ip,i)=>ip.items.forEach(it=>{ if(arrival[it.pid]==null) arrival[it.pid]=i*1000; })); // everything on one inbound pallet comes off together
   const arrivalOf=p=>arrival[p.id]??null; const layerArrival=L=>{ let r=-1; L.comp.forEach(c=>{ const a=arrivalOf(c.p); if(a!=null&&a>r) r=a; }); return r; }; // -1 = all free
   const attempt=(lv,mode,sortMode)=>{
     const relax=lv>=1, fillerMode=lv>=2, creative=lv>=3;
@@ -1653,8 +1658,8 @@ function buildPlan(){ plan_endFilm=null;
     const avail=new Set(); const ready=L=>L.comp.every(c=>{ const a=arrivalOf(c.p); return a==null||avail.has(c.p.id)||stageSet.has(c.p.id); });
     const advance=()=>{ let more=true; while(more){ more=false; for(const P of ps){ const i=builtN.get(P); if(i<P.layers.length&&ready(P.layers[i])){ builtN.set(P,i+1); more=true; } } } };
     advance();
-    for(const ip of inbound) for(const it of ip.items){ if(avail.has(it.pid)) continue; avail.add(it.pid); advance();
-      for(const P of ps){ const i=builtN.get(P); P.layers.forEach((L,k)=>{ if(k>=i) L.comp.forEach(c=>{ if(c.p.id===it.pid&&!stageSet.has(it.pid)) cost+=c.boxes; }); }); } }
+    for(const ip of inbound){ const fresh=new Set(ip.items.map(it=>it.pid).filter(id=>!avail.has(id))); fresh.forEach(id=>avail.add(id)); advance();
+      for(const P of ps){ const i=builtN.get(P); P.layers.forEach((L,k)=>{ if(k>=i) L.comp.forEach(c=>{ if(fresh.has(c.p.id)&&!stageSet.has(c.p.id)) cost+=c.boxes; }); }); } }
     return cost; };
   for(let extra=0;extra<=3&&!pallets;extra++){ target=target0+extra;
     for(let lv=0;lv<LEVELS.length&&!pallets;lv++){ const cands=[];
@@ -1728,7 +1733,7 @@ function buildPlan(){ plan_endFilm=null;
       const all=mergeRuns(mainRuns.filter(r=>!r.done)).concat(mergeRuns(mainRuns.filter(r=>r.done))); all.forEach(m=>{ m.need=needOf(m); });
       const grpKey=m=>m.need>=1e9?1e9:Math.floor(m.need/1000); const keys=[...new Set(all.map(grpKey))].sort((a,b)=>a-b);
       const emitShrink=m=>{ if(!m.done&&m.setup!==curFilm){ if(!heatOn){ seq.push({note:'heat',text:`Turn on the heat tunnel now — about ${settings.warmup} min to warm up before the first shrink run`}); heatOn=true; } if(m.setup!==(curFilm||loaded)) seq.push({note:'film',text:`Change film roll → ${SETUP_LABEL[m.setup]}`}); seq.push({note:'setup',text:SETUP_LABEL[m.setup]}); curFilm=m.setup; if(!films.includes(m.setup)) films.push(m.setup); flushGaps(curFilm); } push(m); };
-      for(const k of keys){ const grp=all.filter(m=>grpKey(m)===k).sort((a,b)=>a.need-b.need||(homeOf(a).tmp-homeOf(b).tmp)||(b.boxes-a.boxes)); const ip=inbound[k]; if(ip) seq.push({note:'setup',text:`Inbound pallet ${esc(ip.name||String(k+1))} — work it top to bottom`,inboundHead:true}); else if(k>=1e9&&grp.length) seq.push({note:'setup',text:'Everything else (loose stock, racks)',inboundHead:true});
+      for(const k of keys){ const grp=all.filter(m=>grpKey(m)===k).sort((a,b)=>a.need-b.need||(homeOf(a).tmp-homeOf(b).tmp)||(b.boxes-a.boxes)); const ip=inbound[k]; if(ip) seq.push({note:'setup',text:`Inbound pallet #${ip.n}${ip.loc?` — bay ${esc(ip.loc)}`:''}`,inboundHead:true}); else if(k>=1e9&&grp.length) seq.push({note:'setup',text:'Everything else (loose stock, racks)',inboundHead:true});
         grp.filter(m=>!isShrink(m.setup)||m.done).forEach(push);
         const fs=[...new Set(grp.filter(m=>isShrink(m.setup)&&!m.done).map(m=>m.setup))].sort((a,b)=>(a===(curFilm||loaded)?-1:b===(curFilm||loaded)?1:0)); fs.forEach(f=>grp.filter(m=>m.setup===f&&!m.done).forEach(emitShrink)); }
       if(heatOn){ seq.push({note:'heat',text:'Shrink work done — switch off the heat tunnel'}); plan_endFilm=(curFilm||stageFilm||'').replace('shrink-','')||null; curFilm=null; }
