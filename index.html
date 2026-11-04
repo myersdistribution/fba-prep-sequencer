@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.31.3-contiguous';
+const VERSION='2.31.4-strict-walk';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1672,7 +1672,7 @@ function buildPlan(){ plan_endFilm=null;
     while(true){ let best=null;
       for(let b=0;b<inbound.length;b++){ const ip=inbound[b]; while(ptr[b]<ip.items.length&&!present.has(ip.items[ptr[b]].pid)){ later.push({pid:ip.items[ptr[b]].pid,bay:ip.loc,n:ip.items[ptr[b]].n,wait:0}); ptr[b]++; } if(ptr[b]>=ip.items.length) continue; const it=ip.items[ptr[b]];
         const snap=new Map(builtN); avail.add(it.pid); const adv=advance(); const w=waiting(it.pid); avail.delete(it.pid); builtN.clear(); snap.forEach((v,k)=>builtN.set(k,v));
-        const stay=b===cur?1:0; const eff=stay?Math.max(0,w-Math.max(3,0.2*(totBx[it.pid]||0))):w; // finishing the bay you're in is worth a few boxes of waiting (fewer trips across the floor)
+        const stay=b===cur?1:0; const eff=w; // strictly in stacking order: nothing is prepped ahead of its layer just to finish a bay (walk back later instead) — ties still favour the bay you're in
         const c={b,it,w,eff,adv,stay}; if(!best||c.eff<best.eff||(c.eff===best.eff&&(c.stay>best.stay||(c.stay===best.stay&&(c.adv>best.adv||(c.adv===best.adv&&b<best.b)))))) best=c; }
       if(!best) break; ptr[best.b]++; cur=best.b; avail.add(best.it.pid); advance(); cost+=best.w; seq.push({pid:best.it.pid,bay:inbound[best.b].loc,n:best.it.n,wait:best.w}); }
     return {cost,seq:seq.concat(later)}; };
