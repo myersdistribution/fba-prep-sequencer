@@ -604,7 +604,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.32.2-2dw-wording';
+const VERSION='2.33.0-prepped-inserts';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1432,7 +1432,7 @@ function unlockPallet(n){ shipment.locked=lockedSnaps().filter(x=>x.n!==n); stor
 function lockAll(quiet){ const plan=buildPlan(); if(!plan||!plan.pallets.length) return; shipment.locked=plan.pallets.map(serPallet); store.set('shipment',shipment); if(!quiet){ renderAll(); feedback(`Plan locked — ${plan.pallets.length} pallet${plan.pallets.length>1?'s':''} frozen; quantity or product changes only re-plan unlocked pallets`,'ok'); } }
 async function unlockAll(){ if(!lockedSnaps().length) return; if(!await ask('Unlock every pallet and let the whole plan re-plan? Pallets already built may come out different.',{ok:'Unlock all'})) return; shipment.locked=[]; store.set('shipment',shipment); renderAll(); feedback('Plan unlocked','ok'); }
 function insertNoteText(m){ const rs=m.dest; const r0=rs[0]; const bx=m.boxes; const layers=[...new Set(rs.map(r=>r.layer))].sort((a,b)=>a-b); const lay=layers.length>1?`L${layers[0]}–L${layers[layers.length-1]}`:`L${layers[0]}`; const nm=r0.p.name.replace(/\s*\(Pack.*$/,'').slice(0,40); const pn='P'+(r0.P.n||'?');
-  return m.mode==='gap'?`Insert from staging: ${bx} × ${nm} → ${pn} gap (${lay})`:m.mode==='stack'?`Move from the staging stack: ${bx} × ${nm} → ${pn} ${lay} (${layers.length} layer${layers.length>1?'s':''})`:`Insert from staging: ${bx} × ${nm} → ${pn} ${lay}`; }
+  const from=m.done?'Already prepped — stack from staging':'Insert from staging'; return m.mode==='gap'?`${from}: ${bx} × ${nm} → ${pn} gap (${lay})`:m.mode==='stack'?`${m.done?'Already prepped — stack from staging':'Move from the staging stack'}: ${bx} × ${nm} → ${pn} ${lay} (${layers.length} layer${layers.length>1?'s':''})`:`${from}: ${bx} × ${nm} → ${pn} ${lay}`; }
 // ── pallet engine ──
 let plan_endFilm=null;
 function buildPlan(){ plan_endFilm=null;
@@ -1709,7 +1709,7 @@ function buildPlan(){ plan_endFilm=null;
   const runs=[];
   for(const P of pallets){ P.layers.forEach((L,j)=>{ L.idx=j+1; for(const c of L.comp){ const units=c.p.a.perbox===1?c.boxes:c.boxes*c.p.upc; runs.push({p:c.p,setup:setupOf(c.p),boxes:c.boxes,units,P,L,layer:L.idx,layerKey:L.group,inGap:!!c.inGap,rowN:c.rowN||null,strip:c.strip||0,stage:stageSet.has(c.p.id)}); } });
     for(const F of P.fill){ const tot=F.comp.reduce((s,c)=>s+c.boxes,0); for(const c of F.comp){ const bx=Math.max(1,Math.round(c.boxes*F.boxes/tot)); const units=c.p.a.perbox===1?bx:bx*c.p.upc; runs.push({p:c.p,setup:setupOf(c.p),boxes:bx,units,P,L:null,layer:P.layers.length+1,layerKey:'hand-fit',stage:stageSet.has(c.p.id)}); } } }
-  const prepped=shipment.prepped||{}; runs.forEach(r=>{ const pu=prepped[r.p.id]||0; r.done=pu>=(shipment.lines.find(l=>l.id===r.p.id)||{}).units; r.partPrepped=!r.done&&pu>0?pu:0; });
+  const prepped=shipment.prepped||{}; runs.forEach(r=>{ const pu=prepped[r.p.id]||0; r.done=pu>=(shipment.lines.find(l=>l.id===r.p.id)||{}).units; r.partPrepped=!r.done&&pu>0?pu:0; if(r.done) r.stage=true; }); // already prepped = sitting in staging: no run, just "stack from staging" steps where its layers become reachable
   const isShrink=s=>s.startsWith('shrink');
   const mergeRuns=rs=>{const m=[];for(const r of rs){const e=m.find(x=>x.p===r.p);if(e){e.boxes+=r.boxes;e.units+=r.units;e.dest.push(r);}else m.push({p:r.p,setup:r.setup,boxes:r.boxes,units:r.units,dest:[r],done:r.done,partPrepped:r.partPrepped});}return m;};
   const stageRuns=runs.filter(r=>r.stage); const mainRuns=runs.filter(r=>!r.inGap&&!r.stage), gapRuns=runs.filter(r=>r.inGap&&!r.stage);
@@ -1728,8 +1728,9 @@ function buildPlan(){ plan_endFilm=null;
     const seq=[]; const built=new Map(); const gapDone=new Set(); const deferred={}; let curFilm=null; // deferred: gap runs that need a film roll not loaded yet, keyed by setup
     // ── stage first: those products are prepped before any pallet is unwrapped. Full layers that sit on nothing but other
     // stage-first layers are built straight onto their pallet now; everything else waits in staging and is inserted later ──
-    const stageMerged=mergeRuns(stageRuns); stageMerged.forEach(m=>{ m.stageFirst=true; m.dest.forEach(d=>{ d.stageMode=d.inGap?'gap':(!d.L?'hand':(d.L.stageBuild?'build':(d.L.kind==='full'?'stack':'part'))); }); });
+    const stageMerged=mergeRuns(stageRuns.filter(r=>!r.done)); stageMerged.forEach(m=>{ m.stageFirst=true; m.dest.forEach(d=>{ d.stageMode=d.inGap?'gap':(!d.L?'hand':(d.L.stageBuild?'build':(d.L.kind==='full'?'stack':'part'))); }); });
     const stageNon=stageMerged.filter(m=>!isShrink(m.setup)||m.done), stageFilms=[...new Set(stageMerged.filter(m=>isShrink(m.setup)&&!m.done).map(m=>m.setup))].sort((a,b)=>(a===loaded?-1:b===loaded?1:0));
+    { const dn=[...new Set(stageRuns.filter(r=>r.done).map(r=>r.p.name.replace(/^.*? - /,'').replace(/\s*\(Pack.*$/,'').slice(0,28)))]; if(dn.length) seq.push({note:'setup',text:`Already prepped, in staging: ${dn.join(', ')} — stacked below as the plan reaches their layers`,stageHead:true}); }
     if(stageMerged.length) seq.push({note:'setup',text:'Stage first — prep these before the first pallet is opened',stageHead:true});
     let heatOn=false, stageFilm=null;
     order(stageNon).forEach(m=>seq.push(m));
@@ -1737,20 +1738,25 @@ function buildPlan(){ plan_endFilm=null;
     if(stageFilm) curFilm=stageFilm;
     if(heatOn&&!blocks.length){ seq.push({note:'heat',text:'Shrink work done — switch off the heat tunnel'}); plan_endFilm=stageFilm.replace('shrink-',''); }
     if(stageMerged.length) seq.push({note:'setup',text:'Pallet builds',stageHead:true});
-    pallets.forEach(P=>{ const top=P.layers.filter(L=>L.stageBuild).length; if(top) built.set(P,top); }); // built during staging
-    const pendingIns=stageRuns.filter(r=>!r.inGap&&!(r.L&&r.L.stageBuild)); const insDone=new Set();
+    pallets.forEach(P=>{ const top=P.layers.filter(L=>L.stageBuild&&!L.comp.every(c=>c.p&&runs.some(r=>r.p===c.p&&r.done))).length; if(top) built.set(P,top); }); // built during staging
+    const pendingIns=stageRuns.filter(r=>!r.inGap&&(r.done||!(r.L&&r.L.stageBuild))); const insDone=new Set();
+    const placed=new Set(); const markBuilt=d=>{ placed.add(d); if(!d.L||runs.every(r=>r.L!==d.L||r.inGap||placed.has(r))) built.set(d.P,Math.max(built.get(d.P)||0,d.layer)); }; // a layer is built once every product in it is on
     const insertText=(rs,mode)=>mode; // text is filled in once pallets are numbered (insertNoteText)
     const kindOf=x=>x.L?x.L.kind:'hand';
-    const flushInserts=()=>{ let more=true; while(more){ more=false; for(const r of pendingIns){ if(insDone.has(r)) continue; if((built.get(r.P)||0)>=r.layer-1){ const grp=pendingIns.filter(x=>!insDone.has(x)&&x.P===r.P&&x.p===r.p&&(built.get(r.P)||0)>=x.layer-1&&kindOf(x)===kindOf(r)); grp.forEach(x=>insDone.add(x)); grp.forEach(x=>built.set(x.P,Math.max(built.get(x.P)||0,x.layer))); seq.push({note:'insert',insert:true,p:r.p,boxes:grp.reduce((s,x)=>s+x.boxes,0),dest:grp,mode:kindOf(r)==='full'?'stack':'part'}); more=true; break; } } } };
-    flushInserts();
-    const push=m=>{ m.staged=false; m.stagedOn=[]; m.dest.slice().sort((a,b)=>a.P.tmp-b.P.tmp||a.layer-b.layer).forEach(d=>{ if(!m.p.a.base&&d.L&&d.layer>((built.get(d.P)||0)+1)){ m.staged=true; if(!m.stagedOn.includes(d.P)) m.stagedOn.push(d.P); } built.set(d.P,Math.max(built.get(d.P)||0,d.layer)); }); seq.push(m);
-      // stage-first fillers for the layers this run just built go in now, straight from staging
-      { const hostLayers=new Set(m.dest.map(d=>d.L).filter(Boolean)); const byP=new Map(); stageRuns.filter(g=>g.inGap&&hostLayers.has(g.L)&&!insDone.has(g)).forEach(g=>{ insDone.add(g); const k=g.P.tmp+'|'+g.p.id; (byP.get(k)||byP.set(k,[]).get(k)).push(g); }); byP.forEach(grp=>seq.push({note:'insert',insert:true,p:grp[0].p,boxes:grp.reduce((s,x)=>s+x.boxes,0),dest:grp,mode:'gap'})); }
-      flushInserts();
-      // gap fills for the layers this run just built: one small run per filler product, done now while the gap is reachable —
-      // unless the filler needs a different film roll, in which case it opens that film block (still before anything covers the gap)
-      const hostLayers=new Set(m.dest.map(d=>d.L).filter(Boolean)); const gs=gapRuns.filter(g=>hostLayers.has(g.L)&&!gapDone.has(g)); gs.forEach(g=>gapDone.add(g));
-      mergeRuns(gs).forEach(gm=>{ gm.gapFill=true; gm.gapFor=m.p; if(isShrink(gm.setup)&&gm.setup!==curFilm&&!gm.done){ (deferred[gm.setup]=deferred[gm.setup]||[]).push(gm); gm.deferred=true; } else seq.push(gm); }); };
+    const flushInserts=()=>{ let more=true; while(more){ more=false; for(const r of pendingIns){ if(insDone.has(r)) continue; if((built.get(r.P)||0)>=r.layer-1){
+          // one step for the whole run of consecutive layers this product can go on now (8 × WT-150 layers = one step, not eight)
+          const same=pendingIns.filter(x=>!insDone.has(x)&&x.P===r.P&&x.p===r.p&&kindOf(x)===kindOf(r)).sort((a,b)=>a.layer-b.layer); const grp=[]; let top=built.get(r.P)||0; for(const x of same){ if(x.layer<=top+1){ grp.push(x); top=Math.max(top,x.layer); } }
+          grp.forEach(x=>{ insDone.add(x); markBuilt(x); }); seq.push({note:'insert',insert:true,p:r.p,boxes:grp.reduce((s,x)=>s+x.boxes,0),dest:grp,mode:kindOf(r)==='full'?'stack':'part',done:!!r.done}); afterBuild(new Set(grp.map(x=>x.L).filter(Boolean)),r.p); more=true; break; } } } };
+    // gap work for layers that were just built (by a prep run or a stack-from-staging step): stage-first / prepped fillers go in from staging,
+    // other fillers are their own small run now while the gap is reachable — unless the filler needs a different film roll, in which case it opens that film block
+    const afterBuild=(hostLayers,forP)=>{
+      { const byP=new Map(); stageRuns.filter(g=>g.inGap&&hostLayers.has(g.L)&&!insDone.has(g)).forEach(g=>{ insDone.add(g); const k=g.P.tmp+'|'+g.p.id; (byP.get(k)||byP.set(k,[]).get(k)).push(g); }); byP.forEach(grp=>seq.push({note:'insert',insert:true,p:grp[0].p,boxes:grp.reduce((s,x)=>s+x.boxes,0),dest:grp,mode:'gap',done:!!grp[0].done})); }
+      const gs=gapRuns.filter(g=>hostLayers.has(g.L)&&!gapDone.has(g)); gs.forEach(g=>gapDone.add(g));
+      mergeRuns(gs).forEach(gm=>{ gm.gapFill=true; gm.gapFor=forP; if(isShrink(gm.setup)&&gm.setup!==curFilm&&!gm.done){ (deferred[gm.setup]=deferred[gm.setup]||[]).push(gm); gm.deferred=true; } else seq.push(gm); }); };
+    const push=m=>{ m.staged=false; m.stagedOn=[]; m.dest.slice().sort((a,b)=>a.P.tmp-b.P.tmp||a.layer-b.layer).forEach(d=>{ if(!m.p.a.base&&d.L&&d.layer>((built.get(d.P)||0)+1)){ m.staged=true; if(!m.stagedOn.includes(d.P)) m.stagedOn.push(d.P); d.staged=true; if(!d.inGap&&!pendingIns.includes(d)) pendingIns.push(d); return; } markBuilt(d); }); seq.push(m);
+      afterBuild(new Set(m.dest.filter(d=>!d.staged).map(d=>d.L).filter(Boolean)),m.p);
+      flushInserts(); };
+    flushInserts(); // what is already prepped and can go straight onto a deck
     const flushGaps=f=>{ const merged=[]; (deferred[f]||[]).forEach(gm=>{ const e=merged.find(x=>x.p===gm.p); if(e){ e.boxes+=gm.boxes; e.units+=gm.units; e.dest.push(...gm.dest); e.gapFor=null; } else merged.push(gm); }); merged.forEach(gm=>seq.push(gm)); delete deferred[f]; };
     if(inbound.length){ // ── follow the inbound pallets: everything reachable from one inbound pallet, then the next; unlisted products slot in where they're first needed ──
       const needOf=m=>{ const a=arrivalOf(m.p); if(a!=null) return a; let need=Infinity; m.dest.forEach(d=>{ let below=-1; d.P.layers.forEach((L,k)=>{ if(k+1<d.layer){ const la=layerArrival(L); if(la>below) below=la; } }); if(below<need) need=below; }); return need===Infinity?1e9:need+0.5; }; // a free product goes in as soon as the first layer it belongs to is reachable
@@ -1836,7 +1842,7 @@ function renderPrep(){
   // heat-tunnel timing: if rates exist, say how far into the work to switch it on
   const heatIdx=plan.seq.findIndex(r=>r.note==='heat'); let heatAt=null; if(heatIdx>0){ let t=0; for(let i=0;i<heatIdx;i++){ const r=plan.seq[i]; if(!r.note&&!r.done){ const m=minsForBoxes(r.p,r.boxes); if(m!=null) t+=m; } } heatAt=t; }
   for(const r of plan.seq){
-    if(r.note==='insert'){ const pn=r.dest[0].pallet; if(prepFilter==='staged'||!prepFilter||prepFilter===pn){ html+=`<div class="run" style="border-left:3px solid ${palColor(pn)};opacity:.9"><div class="n" style="color:var(--accent2)">⤵</div><div style="flex:1"><div><span class="pill" style="border-color:var(--accent2);color:var(--accent2)">from staging</span> ${esc(r.text)}</div><div class="row" style="margin-top:6px"><button class="btn" style="padding:5px 10px" onclick="copySku('${esc(r.p.sku)}')">⎘ Copy SKU</button><button class="btn" style="padding:5px 10px" onclick="openRun3d('${r.p.id}')">▦ Where</button></div></div></div>`; } continue; }
+    if(r.note==='insert'){ const pn=r.dest[0].pallet; if(prepFilter==='staged'||!prepFilter||prepFilter===pn){ html+=`<div class="run" style="border-left:3px solid ${palColor(pn)};opacity:.9"><div class="n" style="color:var(--accent2)">⤵</div><div style="flex:1"><div><span class="pill" style="border-color:var(--accent2);color:var(--accent2)">${r.done?'✓ prepped':'from staging'}</span> ${esc(r.text)}</div><div class="row" style="margin-top:6px"><button class="btn" style="padding:5px 10px" onclick="copySku('${esc(r.p.sku)}')">⎘ Copy SKU</button><button class="btn" style="padding:5px 10px" onclick="openRun3d('${r.p.id}')">▦ Where</button></div></div></div>`; } continue; }
     if(r.note&&r.stageHead){ if(prepFilter==null||prepFilter==='staged'){ html+=`<div class="setup-hd" style="color:var(--accent2);font-weight:700"><span>★ ${esc(r.text)}</span></div>`; } continue; }
     if(r.note&&r.inboundHead){ if(prepFilter==null){ html+=`<div class="setup-hd" style="color:var(--accent);font-weight:700"><span>📦 ${esc(r.text)}</span></div>`; } continue; }
     if(r.note){ if(r.note==='heat'&&heatAt!=null&&r.text.startsWith('Turn on')) r.text=`Turn on the heat tunnel about ${fmtMin(Math.max(0,heatAt-settings.warmup))} into the day (${settings.warmup} min warm-up before the first shrink run)`; const col=r.note==='film'?'var(--warn)':r.note==='heat'?'var(--danger)':'var(--accent2)'; html+=`<div class="setup-hd" style="color:${col}"><span>${r.note==='heat'?'🔥 ':r.note==='film'?'⟲ ':'▶ '}${esc(r.text)}</span></div>`; continue; }
