@@ -558,6 +558,7 @@ body.touch .dest{font-size:13px}
   </div>
 
   <!-- SETTINGS -->
+  <div id="tab-lock" class="hidden"><div class="card" style="text-align:center;padding:28px"><div style="font-size:28px">🔒</div><div class="help" style="margin:8px 0 14px" id="tab-lock-what">PIN-protected.</div><button class="btn btn-primary" id="tab-lock-btn">Enter PIN</button></div></div>
   <div id="tab-settings" class="hidden">
     <div id="settings-lock" class="card hidden" style="text-align:center;padding:28px"><div style="font-size:28px">🔒</div><div class="help" style="margin:8px 0 14px">Settings are PIN-protected.</div><button class="btn btn-primary" onclick="pinUnlock().then(ok=>{ if(ok) renderSettings(); })">Enter PIN</button></div>
     <div id="settings-body">
@@ -585,7 +586,7 @@ body.touch .dest{font-size:13px}
         <div class="field" style="max-width:130px"><label>Shift ends</label><input type="time" id="set-shiftEnd"></div>
         <div class="field"><label>Work days</label><div class="row" id="set-workdays" style="gap:8px;flex-wrap:wrap"></div></div>
         <div class="field"><label>Film loaded now</label><select id="set-film"><option value="8">8"</option><option value="16">16"</option><option value="">none</option></select></div>
-        <div class="field"><label>Settings PIN <span class="help" style="display:inline">blank = no PIN. With a PIN, this tab and editing the prep-type / box-group training cards ask for it (once per sitting); it syncs to every device</span></label><input type="text" id="set-pin" inputmode="numeric" placeholder="e.g. 4 digits" autocomplete="off"></div>
+        <div class="field"><label>Settings PIN <span class="help" style="display:inline">blank = no PIN. With a PIN, the Shipment, Library, Box Groups and Settings tabs and editing the prep-type / box-group training cards ask for it (once per sitting); it syncs to every device</span></label><input type="text" id="set-pin" inputmode="numeric" placeholder="e.g. 4 digits" autocomplete="off"></div>
         <div class="field"><label>Theme <span class="help" style="display:inline">per device, like touch mode</span></label><select id="set-theme"><option value="light">light — white cards, bigger text</option><option value="dark">dark</option></select></div>
         <div class="field"><label>Touch mode <span class="help" style="display:inline">bigger buttons and text for a touch screen</span></label><select id="set-touch"><option value="auto">auto (on when a touch screen is detected)</option><option value="on">on</option><option value="large">on + zoom 130% (standing back from the screen)</option><option value="xl">on + zoom 160%</option><option value="off">off</option></select></div>
       </div>
@@ -625,7 +626,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.36.1-pin';
+const VERSION='2.36.2-pin';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1976,7 +1977,11 @@ function copySku(sku){ const done=()=>feedback(`SKU ${sku} copied — paste it i
 function fallbackCopy(t,done){ const ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); done(); }catch(e){ feedback('Copy failed — SKU is '+t,'warn'); } document.body.removeChild(ta); }
 function feedback(msg,cls){const el=document.getElementById('feedback');el.textContent=msg;el.className='feedback '+cls;clearTimeout(el._t);el._t=setTimeout(()=>{el.className='feedback';},cls==='err'?12000:7000);
   const modalOpen=['train-modal','edit-modal','issue-modal','ask-modal','photo-view'].some(id=>{const m=document.getElementById(id);return m&&!m.classList.contains('hidden');}); const t=document.getElementById('toast'); if(t){ if(modalOpen){ t.textContent=msg; t.className='feedback '+cls; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(()=>{t.className='feedback';t.style.display='none';},cls==='err'?12000:5000); } else { t.className='feedback'; t.style.display='none'; } } }
-function switchTab(t){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));['library','groups','shipment','pallets','prep','training','timing','issues','log','settings'].forEach(k=>document.getElementById('tab-'+k).classList.toggle('hidden',k!==t));window.scrollTo({top:0});}
+const PIN_TABS={shipment:'Shipment',library:'Library',groups:'Box Groups',settings:'Settings'}; // office tabs — behind the Settings PIN when one is set
+function switchTab(t){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t)); const locked=PIN_TABS[t]&&!pinOk();
+  ['library','groups','shipment','pallets','prep','training','timing','issues','log','settings'].forEach(k=>document.getElementById('tab-'+k).classList.toggle('hidden',k!==t||locked));
+  const lk=document.getElementById('tab-lock'); lk.classList.toggle('hidden',!locked); if(locked){ document.getElementById('tab-lock-what').textContent=PIN_TABS[t]+' is PIN-protected.'; document.getElementById('tab-lock-btn').onclick=()=>pinUnlock().then(ok=>{ if(ok){ switchTab(t); renderAll(); } }); }
+  window.scrollTo({top:0});}
 function renderAll(){renderLibrary();renderGroups();renderShipment();renderPallets();renderPrep();renderTraining();renderTimer();renderIssues();renderLog();renderSettings();}
 
 // ── boot ──
