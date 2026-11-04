@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.31.2-stacked';
+const VERSION='2.31.3-contiguous';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1515,8 +1515,9 @@ function buildPlan(){ plan_endFilm=null;
   const attempt=(lv,mode,sortMode)=>{
     const relax=lv>=1, fillerMode=lv>=2, creative=lv>=3;
     const baseFill=lv>=1?0.6:0.75; // once rules relax, a 60%-full heavy mixed layer can be a base under lighter full layers
-    const rank=L=>(L.base?-2:(L.stage&&L.kind==='full')?-1:0)+(L.fragile?2:0)+((L.kind==='full'||(L.fill||0)>=baseFill)?0:1);
-    const gw={}; layers.forEach(L=>{ if(L.kind==='full') gw[L.group]=Math.max(gw[L.group]||0,L.wt); }); const sortW=L=>L.kind==='full'?gw[L.group]:L.wt;
+    const gw={}; layers.forEach(L=>{ if(L.kind==='full') gw[L.group]=Math.max(gw[L.group]||0,L.wt); });
+    const hasStack=L=>L.kind!=='full'&&L.comp.some(c=>!c.inGap&&gw[c.p.a.box||c.p.name]!=null); // a leftover of a product that also has full layers: placed right after them, on top of its own stack
+    const rank=L=>(L.base?-2:(L.stage&&L.kind==='full')?-1:0)+(L.fragile?2:0)+((L.kind==='full'||(L.fill||0)>=baseFill||hasStack(L))?0:1); const sortW=L=>{ if(L.kind==='full') return gw[L.group]; const g=L.comp.filter(c=>!c.inGap&&gw[c.p.a.box||c.p.name]!=null).map(c=>gw[c.p.a.box||c.p.name]-(L.kind==='mixed'?0.02:0.01)); return g.length?Math.min(...g):L.wt; }; // a leftover layer goes down after its own product's full layers, never under them
     if(sortMode==='arrival') layers.sort((a,b)=>rank(a)-rank(b)||layerArrival(a)-layerArrival(b)||sortW(b)-sortW(a)||(a.seq||0)-(b.seq||0)); // what comes off the inbound pallets first goes low
     else layers.sort((a,b)=>rank(a)-rank(b)||sortW(b)-sortW(a)||(a.seq||0)-(b.seq||0));
     let work=layers.map(L=>({...L,comp:L.comp.map(c=>({...c})),notes:[]})), fl=[];
@@ -1549,7 +1550,7 @@ function buildPlan(){ plan_endFilm=null;
       if(P.h+dh>usable||P.wt+L.wt>pwtNet) return null;
       if(L.base&&P.layers.some(x=>!x.base)) return null;
       if(L.hi&&P.layers.filter(x=>x.group===L.group&&x.kind==='full').length>=L.hi) return null; // group's own stack-height cap (e.g. WT-150 8 high)
-      const cands=[]; if(!L.fragile){ P.layers.forEach((x,i)=>{ if(!x.fragile&&x.wt<L.wt&&!x.base&&!x.topoff&&!(x.kind==='full'&&L.kind==='full'&&x.group===L.group)) cands.push(i); }); } /* full layers of one group stack in sequence (36/35 alternation), never re-sorted by weight */ cands.push(P.layers.filter(x=>!x.topoff).length);
+      const cands=[]; if(!L.fragile){ const sharesProd=x=>x.comp.some(c=>!c.inGap&&L.comp.some(d=>!d.inGap&&d.p===c.p)); P.layers.forEach((x,i)=>{ if(!x.fragile&&x.wt<L.wt&&!x.base&&!x.topoff&&!(x.kind==='full'&&L.kind==='full'&&x.group===L.group)&&!P.layers.slice(i).some(sharesProd)) cands.push(i); }); } /* a product's layers stay contiguous: nothing of it is slipped in under layers that already hold it — the leftover goes on top of its own stack, not under it */ /* full layers of one group stack in sequence (36/35 alternation), never re-sorted by weight */ cands.push(P.layers.filter(x=>!x.topoff).length);
       for(const idx of cands){ const stack=P.layers.slice(); const merge=!!(M&&idx===P.layers.length); if(!merge&&P.h+L.h>usable) continue;
         if(merge){ stack[stack.length-1]={...M,h:Math.max(M.h,L.h),wt:M.wt+L.wt,fill:(M.fill||0)+(L.fill||0),kind:'mixed',cap:Math.min(M.cap,L.cap),fragile:M.fragile||L.fragile}; } else stack.splice(idx,0,L);
         if(!stackOk(stack)) continue;
@@ -1570,6 +1571,7 @@ function buildPlan(){ plan_endFilm=null;
       if(L.kind==='full'){ const same=P.layers.filter(x=>x.group===L.group&&x.kind==='full').length; if(same>0) return 1.5+same*0.05+bal; }
       // leftovers: join an open part layer on another pallet (side by side on one level) rather than perching alone on top of a clean stack
       if(L.kind!=='full'&&!L.topoff&&f.idx===P.layers.length){
+        const top=P.layers[P.layers.length-1]; if(top&&!f.merge&&top.comp.some(c=>!c.inGap&&L.comp.some(d=>!d.inGap&&d.p===c.p))) return 2.6+bal; // its own leftover straight onto its own stack: one product, one place, no extra touches
         if(f.merge) return 2.5+bal;
         // a small leftover perched alone on a clean top is not a real build (can't wrap it, nobody stacks that way): last resort only
         const prods=new Set(P.layers.flatMap(x=>x.comp.filter(c=>!c.inGap).map(c=>c.p.id))); if((L.fill||0)<0.35&&P.layers.length>=3) return bal-(prods.size===1?1.2:0.9); }
@@ -1665,12 +1667,13 @@ function buildPlan(){ plan_endFilm=null;
     const avail=new Set([...stageSet,...doneSet]); const ready=L=>L.comp.every(c=>!listed.has(c.p.id)||avail.has(c.p.id));
     const advance=()=>{ let n=0,more=true; while(more){ more=false; for(const P of ps){ const i=builtN.get(P); if(i<P.layers.length&&ready(P.layers[i])){ builtN.set(P,i+1); more=true; n++; } } } return n; };
     const waiting=pid=>{ let n=0; for(const P of ps){ const i=builtN.get(P); P.layers.forEach((L,k)=>{ if(k>=i) L.comp.forEach(c=>{ if(c.p.id===pid) n+=c.boxes; }); }); } return n; };
-    const present=new Set(); ps.forEach(P=>P.layers.forEach(L=>{ L.comp.forEach(c=>present.add(c.p.id)); if(L.gap) L.gap.comp.forEach(c=>present.add(c.p.id)); }));
+    const present=new Set(), totBx={}; ps.forEach(P=>P.layers.forEach(L=>{ L.comp.forEach(c=>{ present.add(c.p.id); totBx[c.p.id]=(totBx[c.p.id]||0)+c.boxes; }); if(L.gap) L.gap.comp.forEach(c=>present.add(c.p.id)); }));
     advance(); const ptr=inbound.map(()=>0); const seq=[]; let cur=-1; const later=[];
     while(true){ let best=null;
       for(let b=0;b<inbound.length;b++){ const ip=inbound[b]; while(ptr[b]<ip.items.length&&!present.has(ip.items[ptr[b]].pid)){ later.push({pid:ip.items[ptr[b]].pid,bay:ip.loc,n:ip.items[ptr[b]].n,wait:0}); ptr[b]++; } if(ptr[b]>=ip.items.length) continue; const it=ip.items[ptr[b]];
         const snap=new Map(builtN); avail.add(it.pid); const adv=advance(); const w=waiting(it.pid); avail.delete(it.pid); builtN.clear(); snap.forEach((v,k)=>builtN.set(k,v));
-        const c={b,it,w,adv,stay:b===cur?1:0}; if(!best||c.w<best.w||(c.w===best.w&&(c.stay>best.stay||(c.stay===best.stay&&(c.adv>best.adv||(c.adv===best.adv&&b<best.b)))))) best=c; }
+        const stay=b===cur?1:0; const eff=stay?Math.max(0,w-Math.max(3,0.2*(totBx[it.pid]||0))):w; // finishing the bay you're in is worth a few boxes of waiting (fewer trips across the floor)
+        const c={b,it,w,eff,adv,stay}; if(!best||c.eff<best.eff||(c.eff===best.eff&&(c.stay>best.stay||(c.stay===best.stay&&(c.adv>best.adv||(c.adv===best.adv&&b<best.b)))))) best=c; }
       if(!best) break; ptr[best.b]++; cur=best.b; avail.add(best.it.pid); advance(); cost+=best.w; seq.push({pid:best.it.pid,bay:inbound[best.b].loc,n:best.it.n,wait:best.w}); }
     return {cost,seq:seq.concat(later)}; };
   for(let extra=0;extra<=3&&!pallets;extra++){ target=target0+extra;
