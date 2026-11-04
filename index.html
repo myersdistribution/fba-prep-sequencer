@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.31.4-strict-walk';
+const VERSION='2.31.5-step-order';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1756,8 +1756,9 @@ function buildPlan(){ plan_endFilm=null;
         if(st){ if(st.bay!==lastBay){ const run=[]; for(let j=k;j<inbSeq.length&&inbSeq[j].bay===st.bay;j++) run.push('#'+inbSeq[j].n); seq.push({note:'setup',text:(st.bay?`Bay ${esc(st.bay)}`:'No bay')+` — take ${run.join(', ')}${run.length>1?' in that order':''}`,inboundHead:true}); lastBay=st.bay; } }
         else if(k<0&&grp.length) seq.push({note:'setup',text:'Already prepped — stack what can go on now, the rest waits in staging',inboundHead:true});
         else if(k>=1e9&&grp.length) seq.push({note:'setup',text:'Everything else (loose stock, racks)',inboundHead:true});
-        grp.filter(m=>!isShrink(m.setup)||m.done).forEach(push);
-        const fs=[...new Set(grp.filter(m=>isShrink(m.setup)&&!m.done).map(m=>m.setup))].sort((a,b)=>(a===(curFilm||loaded)?-1:b===(curFilm||loaded)?1:0)); fs.forEach(f=>grp.filter(m=>m.setup===f&&!m.done).forEach(emitShrink)); }
+        // the step's own line first (whatever its setup), then everything that only became reachable because of it — stickers / already prepped, then shrink by film
+        const emitSet=g=>{ g.filter(m=>!isShrink(m.setup)||m.done).forEach(push); const fs=[...new Set(g.filter(m=>isShrink(m.setup)&&!m.done).map(m=>m.setup))].sort((a,b)=>(a===(curFilm||loaded)?-1:b===(curFilm||loaded)?1:0)); fs.forEach(f=>g.filter(m=>m.setup===f&&!m.done).forEach(emitShrink)); };
+        emitSet(grp.filter(m=>m.need===k)); emitSet(grp.filter(m=>m.need!==k)); }
       if(heatOn){ seq.push({note:'heat',text:'Shrink work done — switch off the heat tunnel'}); plan_endFilm=(curFilm||stageFilm||'').replace('shrink-','')||null; curFilm=null; }
     } else {
     before.forEach(push);
