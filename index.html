@@ -601,7 +601,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.31.1-stacked';
+const VERSION='2.31.2-stacked';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1408,7 +1408,7 @@ function renderInbound(plan){ const st=document.getElementById('inbound-stats');
   if(!inb.length){ st.innerHTML=''; return; }
   let list; if(plan&&plan.inbSeq&&plan.inbSeq.length){ const parts=[]; plan.inbSeq.forEach(st=>{ const last=parts[parts.length-1]; if(last&&last.bay===st.bay) last.ns.push(st.n); else parts.push({bay:st.bay,ns:[st.n]}); }); list=parts.map(x=>`<b>${x.bay?'bay '+esc(x.bay):'no bay'}</b> ${x.ns.map(n=>'#'+n).join(' ')}`).join(' → '); }
   else list=inb.map(ip=>`<b>${esc(ip.name)}</b> ${ip.items.map(it=>'#'+it.n).join(' ')}`).join(' → ');
-  st.innerHTML=`📦 Work the bays in this order: ${list}.${conflicts?` <span style="color:var(--danger)">${conflicts} lines share a bay + number — fix the red cells.</span>`:''}${plan&&plan.staging?(plan.staging.cost?` Even so <b style="color:var(--warn)">${plan.staging.cost} boxes</b> get prepped before the layer they go to is reachable (they wait in staging); arrangement: ${plan.staging.mode==='arrival'?'arrival-aware':'standard'}, same pallet count.`:' Nothing has to wait in staging — every layer is reachable when its boxes come off the bay.'):''}`; }
+  st.innerHTML=`📦 Work the bays in this order: ${list}.${conflicts?` <span style="color:var(--danger)">${conflicts} lines share a bay + number — fix the red cells.</span>`:''}${plan&&plan.staging?(plan.staging.cost?` Even so <b style="color:var(--warn)">${plan.staging.cost} boxes</b> get prepped before the layer they go to is reachable (they wait in staging)${(()=>{ const top=(plan.inbSeq||[]).filter(x=>x.wait>0).sort((a,b)=>b.wait-a.wait).slice(0,2).map(x=>`${x.wait} × ${esc(((library.find(q=>q.id===x.pid)||{}).name||'').replace(/^.*? - /,'').replace(/\s*\(Pack.*$/,'').slice(0,28))} (bay ${esc(x.bay||'?')} #${x.n})`); return top.length?' — mostly '+top.join(', '):''; })()}; arrangement: ${plan.staging.mode==='arrival'?'arrival-aware':'standard'}, same pallet count.`:' Nothing has to wait in staging — every layer is reachable when its boxes come off the bay.'):''}`; }
 function toggleAsIs(id,on){ if(!shipment) return; shipment.asis=shipment.asis||{}; if(on) shipment.asis[id]=true; else delete shipment.asis[id]; store.set('shipment',shipment); renderAll(); }
 function toggleStage(id,on){ if(!shipment) return; shipment.stage=shipment.stage||{}; if(on) shipment.stage[id]=true; else delete shipment.stage[id]; store.set('shipment',shipment); renderAll(); }
 function pwtNetG(){ return settings.pwt-(settings.deckWt||0); }
@@ -1482,7 +1482,7 @@ function buildPlan(){ plan_endFilm=null;
       while(need>0){ const it=pool.find(x=>x.boxes>0); const take=Math.min(need,it.boxes); it.boxes-=take; need-=take; wt+=take*it.wtEach; comp.push({p:it.p,boxes:take}); }
       const gf=gapFills.find(g=>g.group===G.name); let gap=null;
       if(gf){ const li=i; if(li<gf.layers){ gap={comp:[],boxes:0,wt:0}; for(const t of gf.fill){ const share=Math.floor(t.boxes/gf.layers)+(li<t.boxes%gf.layers?1:0); if(share>0){ gap.comp.push({p:t.p,boxes:share,rowN:t.rowN,ori:t.ori,wtEach:t.wtEach}); gap.boxes+=share; gap.wt+=share*t.wtEach; } } wt+=gap.wt; } }
-      layers.push({seq:layers.length,kind:'full',par:i%2,stage:comp.every(c=>stageSet.has(c.p.id)),mixedFlavors:comp.length>1,group:G.name,h:G.h,wt,boxes:per+(gap?gap.boxes:0),comp:gap?comp.concat(gap.comp.map(c=>({...c,inGap:true}))):comp,gap,fragile:G.fragile,weak:G.weak,base:G.base,stack:G.stack||null,hi:G.hi||null,cap:G.load||((G.wt||0)<=settings.lightBox?Math.max(settings.loadMin,settings.loadFactor*wt):Infinity)}); }
+      layers.push({seq:layers.length,kind:'full',par:i%2,stage:comp.every(c=>stageSet.has(c.p.id)),mixedFlavors:comp.length>1,group:G.name,h:G.h,wt,boxes:per+(gap?gap.boxes:0),comp:gap?comp.concat(gap.comp.map(c=>({...c,inGap:true}))):comp,gap,fragile:G.fragile,weak:G.weak,base:G.base||comp.every(c=>asIs(c.p.id)),stack:G.stack||null,hi:G.hi||null,cap:G.load||((G.wt||0)<=settings.lightBox?Math.max(settings.loadMin,settings.loadFactor*wt):Infinity)}); }
     const rest=pool.filter(x=>x.boxes>0); if(rest.length) leftovers.push({G,items:rest,boxes:rest.reduce((s,i)=>s+i.boxes,0)});
   }
   // mixed layers from leftovers: cluster by height within tol; weak groups stay alone
@@ -1681,8 +1681,8 @@ function buildPlan(){ plan_endFilm=null;
       const costC=c=>c.staged+5*c.splits+(c.sm==='arrival'?thresh:0); const rankC=(a,b)=>costC(a)-costC(b)||(a.sm==='weight'?-1:1)||(a.md==='balanced'?-1:1);
       for(const md of ['balanced','sequential']) tryOne(md,'weight');
       if(inbound.length&&cands.length){ setSeq(cands.slice().sort(rankC)[0].seq); for(const md of ['balanced','sequential']) tryOne(md,'arrival'); }
-      if(cands.length){ // fewest boxes waiting in staging wins; splitting a product over extra pallets costs about five staged boxes each, and the plain plan wins ties
-        cands.sort(rankC); const best=cands[0]; pallets=best.r.ps; filler=best.r.fl; level=lv; mode=best.md; setSeq(best.seq); planStaging={cost:best.staged,splits:best.splits,mode:best.sm,tried:cands.map(c=>c.md+'/'+c.sm+':'+c.staged+'+'+c.splits)}; } } }
+      if(cands.length){ // build quality first: only arrangements within one product split of the cleanest are considered; among those the fewest boxes waiting in staging wins, and the plain plan wins ties
+        const minSp=Math.min(...cands.map(c=>c.splits)); const elig=cands.filter(c=>c.splits<=minSp+1); elig.sort(rankC); const best=elig[0]; pallets=best.r.ps; filler=best.r.fl; level=lv; mode=best.md; setSeq(best.seq); planStaging={cost:best.staged,splits:best.splits,mode:best.sm,tried:cands.map(c=>c.md+'/'+c.sm+':'+c.staged+'+'+c.splits)}; } } }
   // (level/mode loop end)
   if(!pallets){ pallets=[]; layers.forEach(L=>unplaced.push({name:L.group,boxes:L.boxes,why:'could not place'})); level=LEVELS.length; }
   pallets=lockedPallets.concat(pallets);
