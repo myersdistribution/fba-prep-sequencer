@@ -626,7 +626,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.36.2-pin';
+const VERSION='2.36.3-pin';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1958,6 +1958,7 @@ function applyTouch(){ document.body.classList.toggle('light',(settings.theme||'
 let prepFilter=null; function setPrepFilter(n){ prepFilter=n; renderPrep(); }
 function markFilm(f){settings.film=f;store.set('settings',settings);renderAll();feedback(`Film loaded set to ${f}"`,'ok');}
 function renderSettings(){
+  applyTouch(); // theme + touch mode apply whether or not the tab is unlocked
   { const locked=!pinOk(); document.getElementById('settings-lock').classList.toggle('hidden',!locked); document.getElementById('settings-body').classList.toggle('hidden',locked); if(locked) return; }
   for(const k of ['pl','pw','ph','pd','pwt','tol','frag','warmup','loadFactor','loadMin','lightBox','maxPallets','deckWt','margin','noneSec','handleSec','changeMin','film','touch','theme','shiftStart','shiftEnd','url','key']) document.getElementById('set-'+k).value=settings[k]??DEFAULTS[k]; document.getElementById('set-pin').value=settings.pin||'';
   { const wd=document.getElementById('set-workdays'); const on=String(settings.workDays||'12345'); wd.innerHTML=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d,i)=>`<label class="help" style="display:flex;align-items:center;gap:4px"><input type="checkbox" class="set-wd" value="${i}" ${on.includes(String(i))?'checked':''}> ${d}</label>`).join(''); }
