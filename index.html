@@ -412,6 +412,14 @@ body.touch .dest{font-size:13px}
       <div id="train-topics" class="train-grid"></div>
     </div>
     <div class="card">
+      <div class="card-title"><span>Products</span><span class="help" id="train-prod-note"></span></div>
+      <div class="row" style="margin-bottom:12px;align-items:flex-end">
+        <div class="field" style="flex:3"><label>Start a card for a product — SKU, ASIN or name</label><input type="search" id="train-add-find" placeholder="e.g. noodles" list="man-list"></div>
+        <button class="btn" onclick="trainAddProduct()">Open card</button>
+      </div>
+      <div id="train-products" class="train-grid"></div>
+    </div>
+    <div class="card">
       <div class="card-title"><span>Prep types</span><span class="help" id="train-prep-note"></span></div>
       <div class="help" style="margin-bottom:10px">One card per kind of prep. Its steps and watch-outs show on every product that gets that prep, under the product's own photos — write the method once here, keep the product cards for what's specific to that item. Photos can be attached to a step (pick the step before taking the photo) — as many as it takes to show the orientation or the whole shrink process.</div>
       <div id="train-prep" class="train-grid"></div>
@@ -420,14 +428,6 @@ body.touch .dest{font-size:13px}
       <div class="card-title"><span>Box groups</span><span class="row" style="align-items:center;gap:6px"><select id="train-group-pick" style="max-width:220px"></select><button class="btn" onclick="trainAddGroup()">+ Group card</button></span></div>
       <div class="help" style="margin-bottom:10px">Optional notes shared by every product in a box group (gallons: label in place on the pallet; apple butter: glass). Shown on each product in the group.</div>
       <div id="train-groups" class="train-grid"></div>
-    </div>
-    <div class="card">
-      <div class="card-title"><span>Products</span><span class="help" id="train-prod-note"></span></div>
-      <div class="row" style="margin-bottom:12px;align-items:flex-end">
-        <div class="field" style="flex:3"><label>Start a card for a product — SKU, ASIN or name</label><input type="search" id="train-add-find" placeholder="e.g. noodles" list="man-list"></div>
-        <button class="btn" onclick="trainAddProduct()">Open card</button>
-      </div>
-      <div id="train-products" class="train-grid"></div>
     </div>
   </div>
 
@@ -559,6 +559,8 @@ body.touch .dest{font-size:13px}
 
   <!-- SETTINGS -->
   <div id="tab-settings" class="hidden">
+    <div id="settings-lock" class="card hidden" style="text-align:center;padding:28px"><div style="font-size:28px">🔒</div><div class="help" style="margin:8px 0 14px">Settings are PIN-protected.</div><button class="btn btn-primary" onclick="pinUnlock().then(ok=>{ if(ok) renderSettings(); })">Enter PIN</button></div>
+    <div id="settings-body">
     <div class="card">
       <div class="card-title"><span>Pallet limits</span></div>
       <div class="row">
@@ -583,6 +585,7 @@ body.touch .dest{font-size:13px}
         <div class="field" style="max-width:130px"><label>Shift ends</label><input type="time" id="set-shiftEnd"></div>
         <div class="field"><label>Work days</label><div class="row" id="set-workdays" style="gap:8px;flex-wrap:wrap"></div></div>
         <div class="field"><label>Film loaded now</label><select id="set-film"><option value="8">8"</option><option value="16">16"</option><option value="">none</option></select></div>
+        <div class="field"><label>Settings PIN <span class="help" style="display:inline">blank = no PIN. With a PIN, this tab and editing the prep-type / box-group training cards ask for it (once per sitting); it syncs to every device</span></label><input type="text" id="set-pin" inputmode="numeric" placeholder="e.g. 4 digits" autocomplete="off"></div>
         <div class="field"><label>Theme <span class="help" style="display:inline">per device, like touch mode</span></label><select id="set-theme"><option value="light">light — white cards, bigger text</option><option value="dark">dark</option></select></div>
         <div class="field"><label>Touch mode <span class="help" style="display:inline">bigger buttons and text for a touch screen</span></label><select id="set-touch"><option value="auto">auto (on when a touch screen is detected)</option><option value="on">on</option><option value="large">on + zoom 130% (standing back from the screen)</option><option value="xl">on + zoom 160%</option><option value="off">off</option></select></div>
       </div>
@@ -612,6 +615,7 @@ body.touch .dest{font-size:13px}
       <div class="help" style="margin-top:8px">The built-in seed is the SoStocked export from 26 Sep 2026 (83 products). With sheet sync on, the sheet is the shared copy; this browser keeps a local cache.</div>
     </div>
   </div>
+  </div>
 
   <div class="footer" id="footer"></div>
 </div>
@@ -621,7 +625,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.36.0-prep-cards';
+const VERSION='2.36.1-pin';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1093,10 +1097,10 @@ function renderTrainModal(){ const c=trainCard(trainOpen); if(!c) return; const 
       ${c.kind==='topic'?`<div class="field" style="margin-top:8px"><label>Title</label><input type="text" id="tr-title" value="${esc(c.title||'')}"></div>`:''}${(c.kind==='prep'||c.kind==='group')&&c.draft?'<div class="help">Saving confirms this card and clears the draft mark.</div>':''}
       <div class="row" style="margin-top:10px"><button class="btn btn-green" onclick="trainSaveText()">Save</button><button class="btn" onclick="trainEditing=false;renderTrainModal()">Cancel</button></div>`
     :(()=>{ const inh=p?trainInherited(p):[]; const dupS=inh.some(x=>(x.card.steps||'').trim()===(c.steps||'').trim()), dupG=inh.some(x=>(x.card.gotchas||'').trim()===(c.gotchas||'').trim()); const own=dupS?'':c.steps, ownG=dupG?'':c.gotchas; // the same text as the shared card is not repeated
-      return `${p&&inherited?'<div class="help" style="margin:8px 0 2px"><b>Specific to this product</b></div>':''}${stepsHtml(own,c)||`<div class="help" style="margin:6px 0">${p&&inherited?'Nothing extra for this item — the shared steps above cover it.':'No steps written yet.'}</div>`}${ownG?`<div class="gotcha">⚠ ${esc(ownG).replace(/\n/g,'<br>')}</div>`:''}`; })()+`<div class="row" style="margin-top:8px"><button class="btn" onclick="trainEditing=true;renderTrainModal()">✎ ${c.steps||c.gotchas?'Edit steps':'Write steps'}</button></div>`;
+      return `${p&&inherited?'<div class="help" style="margin:8px 0 2px"><b>Specific to this product</b></div>':''}${stepsHtml(own,c)||`<div class="help" style="margin:6px 0">${p&&inherited?'Nothing extra for this item — the shared steps above cover it.':'No steps written yet.'}</div>`}${ownG?`<div class="gotcha">⚠ ${esc(ownG).replace(/\n/g,'<br>')}</div>`:''}`; })()+`<div class="row" style="margin-top:8px"><button class="btn" onclick="${(c.kind==='prep'||c.kind==='group')?'pinUnlock().then(ok=>{ if(ok){ trainEditing=true; renderTrainModal(); } })':'trainEditing=true;renderTrainModal()'}">✎ ${c.steps||c.gotchas?'Edit steps':'Write steps'}${(c.kind==='prep'||c.kind==='group')&&(settings.pin||'').trim()&&!pinOk()?' 🔒':''}</button></div>`;
   document.getElementById('train-body').innerHTML=`${meta}${review}${users}${photos}<div class="kindbtns" style="margin:6px 0 4px">${kinds}</div>${stepPick}<div id="train-upload" class="help" style="margin-top:4px"></div>${inherited}${text}<div class="row" style="margin-top:16px;justify-content:space-between"><span class="help">${c.ts?'Updated '+new Date(c.ts).toLocaleDateString():''}</span><button class="btn" style="color:var(--danger)" onclick="trainDeleteCard('${c.id}')">Delete card</button></div>`; }
 function trainSaveText(){ const c=trainCard(trainOpen); if(!c) return; c.steps=document.getElementById('tr-steps').value.trim(); c.gotchas=document.getElementById('tr-gotchas').value.trim(); const t=document.getElementById('tr-title'); if(t) c.title=t.value.trim()||c.title; c.draft=false; delete c.review; trainEditing=false; trainSave(c); feedback('Saved','ok'); }
-async function trainDeleteCard(id){ const c=trainCard(id); if(!c) return; if(!await ask(`Delete the "${trainTitle(c)}" card with its ${c.photos.length} photo${c.photos.length===1?'':'s'}? Photos stay in the Drive folder.`,{ok:'Delete card'})) return; delete training.cards[id]; store.set('training',training); closeTrain(); renderTraining(); }
+async function trainDeleteCard(id){ const c=trainCard(id); if(!c) return; if((c.kind==='prep'||c.kind==='group')&&!(await pinUnlock())) return; if(!await ask(`Delete the "${trainTitle(c)}" card with its ${c.photos.length} photo${c.photos.length===1?'':'s'}? Photos stay in the Drive folder.`,{ok:'Delete card'})) return; delete training.cards[id]; store.set('training',training); closeTrain(); renderTraining(); }
 function trainAddGroup(){ const sel=document.getElementById('train-group-pick'); const k=sel&&sel.value; if(!k) return; const id='g_'+k; if(!training.cards[id]) training.cards[id]={id,kind:'group',key:k,title:k,steps:'',gotchas:'',photos:[],removed:[],ts:Date.now()}; store.set('training',training); openTrain(id); renderTraining(); }
 function trainNewTopic(){ askText('Topic title','').then(v=>{ if(!v||!v.trim()) return; const id='t_'+Date.now().toString(36); training.cards[id]={id,kind:'topic',title:v.trim(),order:50,steps:'',gotchas:'',photos:[],removed:[],ts:Date.now()}; store.set('training',training); openTrain(id); renderTraining(); }); }
 function trainAddProduct(){ const q=document.getElementById('train-add-find').value; const p=findByText(q); if(!p){ feedback('No product matches "'+q+'"','warn'); return; } document.getElementById('train-add-find').value=''; openTrain(p.id); }
@@ -1947,18 +1951,21 @@ function renderPrep(){
   if(plan.endFilm) html+=`<div class="row" style="margin-top:10px;justify-content:flex-end"><span class="help">This plan ends with ${plan.endFilm}" film loaded.</span><button class="btn" onclick="markFilm('${plan.endFilm}')">Shipment done → ${plan.endFilm}" is loaded now</button></div>`;
   el.innerHTML=html+'</div>';
 }
+function pinOk(){ const pin=(settings.pin||'').trim(); if(!pin) return true; try{ return sessionStorage.getItem('fba_pin_ok')===pin; }catch(e){ return false; } }
+async function pinUnlock(){ if(pinOk()) return true; const v=await askText('Enter the Settings PIN',''); if(v===null) return false; if((v||'').trim()===(settings.pin||'').trim()){ try{ sessionStorage.setItem('fba_pin_ok',settings.pin); }catch(e){} feedback('Unlocked for this sitting','ok'); return true; } feedback('Wrong PIN','err'); return false; }
 function applyTouch(){ document.body.classList.toggle('light',(settings.theme||'light')!=='dark'); const m=settings.touch||'auto'; const on=m==='on'||m==='large'||m==='xl'||(m==='auto'&&!!(window.matchMedia&&(matchMedia('(pointer:coarse)').matches||matchMedia('(any-pointer:coarse)').matches))); document.body.classList.toggle('touch',on); document.body.style.zoom=m==='large'?'1.3':m==='xl'?'1.6':''; const f=document.getElementById('foot-mode'); if(f) f.textContent=on?' · touch mode'+(m==='large'?' 130%':m==='xl'?' 160%':''):''; }
 let prepFilter=null; function setPrepFilter(n){ prepFilter=n; renderPrep(); }
 function markFilm(f){settings.film=f;store.set('settings',settings);renderAll();feedback(`Film loaded set to ${f}"`,'ok');}
 function renderSettings(){
-  for(const k of ['pl','pw','ph','pd','pwt','tol','frag','warmup','loadFactor','loadMin','lightBox','maxPallets','deckWt','margin','noneSec','handleSec','changeMin','film','touch','theme','shiftStart','shiftEnd','url','key']) document.getElementById('set-'+k).value=settings[k]??DEFAULTS[k];
+  { const locked=!pinOk(); document.getElementById('settings-lock').classList.toggle('hidden',!locked); document.getElementById('settings-body').classList.toggle('hidden',locked); if(locked) return; }
+  for(const k of ['pl','pw','ph','pd','pwt','tol','frag','warmup','loadFactor','loadMin','lightBox','maxPallets','deckWt','margin','noneSec','handleSec','changeMin','film','touch','theme','shiftStart','shiftEnd','url','key']) document.getElementById('set-'+k).value=settings[k]??DEFAULTS[k]; document.getElementById('set-pin').value=settings.pin||'';
   { const wd=document.getElementById('set-workdays'); const on=String(settings.workDays||'12345'); wd.innerHTML=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d,i)=>`<label class="help" style="display:flex;align-items:center;gap:4px"><input type="checkbox" class="set-wd" value="${i}" ${on.includes(String(i))?'checked':''}> ${d}</label>`).join(''); }
   applyTouch();
   { const es=(shipLog||[]).filter(e=>e.jobMins&&e.boxes&&e.estAll&&e.est!=null); const hint=document.getElementById('handle-hint'); if(hint){ if(es.length){ const b=es.reduce((s,e)=>s+e.boxes,0), extra=es.reduce((s,e)=>s+Math.max(0,e.jobMins-e.est),0); hint.textContent=`From ${es.length} closed shipment${es.length>1?'s':''} with start/finish times: job time minus estimated prep works out to about ${Math.round(extra*60/b)} sec/box.`; } else hint.textContent='Set Job started / finished before closing shipments and this will suggest a figure from the real job times.'; } }
   const isPreview=location.hostname.includes('claude')||location.protocol==='file:';
   document.getElementById('sync-note').innerHTML=isPreview?'Sheet sync is <b>off</b> in this preview (outside connections are blocked here). It runs on the GitHub-hosted version. Your data is stored in this browser for now.':(syncEnabled()?'Sync is on: the sheet is the shared copy, every device pulls it on open and pushes changes a moment after they happen. Issues and shipment close-outs are emailed.':'Paste the Apps Script /exec URL and the shared key, Save, then Test connection.'); setSyncStatus(syncState.status);
 }
-function saveSettings(){for(const k of ['pl','pw','ph','pd','pwt','tol','frag','warmup','loadFactor','loadMin','lightBox','maxPallets','deckWt','margin','noneSec','handleSec','changeMin']) settings[k]=parseFloat(document.getElementById('set-'+k).value)||DEFAULTS[k]; settings.film=document.getElementById('set-film').value; settings.touch=document.getElementById('set-touch').value||'auto'; settings.theme=document.getElementById('set-theme').value||'light'; settings.shiftStart=document.getElementById('set-shiftStart').value||'09:00'; settings.shiftEnd=document.getElementById('set-shiftEnd').value||'15:00'; settings.workDays=[...document.querySelectorAll('.set-wd:checked')].map(c=>c.value).join('')||'12345'; settings.url=document.getElementById('set-url').value.trim(); settings.key=document.getElementById('set-key').value.trim(); store.set('settings',settings); renderAll(); feedback('Settings saved','ok');}
+function saveSettings(){for(const k of ['pl','pw','ph','pd','pwt','tol','frag','warmup','loadFactor','loadMin','lightBox','maxPallets','deckWt','margin','noneSec','handleSec','changeMin']) settings[k]=parseFloat(document.getElementById('set-'+k).value)||DEFAULTS[k]; settings.film=document.getElementById('set-film').value; settings.touch=document.getElementById('set-touch').value||'auto'; settings.theme=document.getElementById('set-theme').value||'light'; settings.pin=(document.getElementById('set-pin').value||'').trim(); if(settings.pin){ try{ sessionStorage.setItem('fba_pin_ok',settings.pin); }catch(e){} } settings.shiftStart=document.getElementById('set-shiftStart').value||'09:00'; settings.shiftEnd=document.getElementById('set-shiftEnd').value||'15:00'; settings.workDays=[...document.querySelectorAll('.set-wd:checked')].map(c=>c.value).join('')||'12345'; settings.url=document.getElementById('set-url').value.trim(); settings.key=document.getElementById('set-key').value.trim(); store.set('settings',settings); renderAll(); feedback('Settings saved','ok');}
 function exportLibrary(){const blob=new Blob([JSON.stringify(library,null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='fba-library.json';a.click();}
 async function resetToSeed(){if(!await ask('Replace the library with the built-in seed?',{ok:'Reset'}))return; store.del('library'); loadLibrary(); renderAll(); feedback('Library reset to built-in seed','ok');}
 async function wipeAll(){if(!await ask('Clear all local data in this browser?',{ok:'Wipe'}))return; ['library','shipment','settings','librarySource'].forEach(store.del); location.reload();}
