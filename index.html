@@ -632,7 +632,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.40.3-progress';
+const VERSION='2.40.4-progress';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1333,7 +1333,7 @@ function layoutLayerIn(L,PL,PW){ const out=[]; const items=[];
   // place main boxes: grid in best orientation if all one footprint, else shelf packing
   const fp=main.map(i=>({p:i.p,a:i.p.l||1,b:i.p.w||1}));
   const same=fp.every(f=>Math.abs(f.a-fp[0].a)<0.01&&Math.abs(f.b-fp[0].b)<0.01);
-  const pat=G&&((L.par===1&&G.pat2)?G.pat2:G.pat); const TOL=1.5; let patStrip=null; const flip=!!(G&&G.alt&&L.idx&&L.idx%2===0&&!gap); // interlock: even layers reversed end for end // a pattern may overhang the deck by an inch or so, as the real stacks do
+  const pat=G&&((L.par===1&&G.pat2)?G.pat2:G.pat); const TOL=1.5; let patStrip=null, midStrip=null, gridded=false; const flip=!!(G&&G.alt&&L.idx&&L.idx%2===0&&!gap); // interlock: even layers reversed end for end // a pattern may overhang the deck by an inch or so, as the real stacks do
   if(same&&fp.length&&pat&&pat.flat().reduce((s,c)=>s+c.n,0)>=fp.length){ const long=Math.max(fp[0].a,fp[0].b), short=Math.min(fp[0].a,fp[0].b); let n=0, ok=true; const placed=[];
     // sections run down the length; inside a section the columns run across the width. Columns in a section are drawn to the same
     // length (short ones spread their boxes evenly) so nobody copies a false overhang; the last column/section sits against the far edge.
@@ -1346,11 +1346,15 @@ function layoutLayerIn(L,PL,PW){ const out=[]; const items=[];
     if(ok){ // a saved pattern is drawn exactly as given (tight); only the gap column opens it up
       if(gapAt||(G.gapAt&&!gap)) placed.sort((A,B)=>A.seg-B.seg||A.i-B.i||A.y-B.y); for(let k=0;k<placed.length&&n<fp.length;k++,n++){ const sl=placed[k]; out.push({x:sl.x,y:sl.y,w:sl.w,l:sl.l,h:fp[n].p.h,p:fp[n].p}); }
       if(stripX!=null) patStrip={x:stripX,y:0,w:gap.w,l:PW}; }
-    else gridPlace(fp,areaL,areaW,out); }
-  else if(same&&fp.length){ gridPlace(fp,areaL,areaW,out); }
+    else { gridPlace(fp,areaL,areaW,out); gridded=true; } }
+  else if(same&&fp.length){ gridPlace(fp,areaL,areaW,out); gridded=true; }
   else { // shelf packing: rows along the length, boxes oriented long side along x
     let x=0,y=0,rowH=0; fp.sort((A,B)=>(B.a*B.b)-(A.a*A.b)); for(const f of fp){ let bl=Math.max(f.a,f.b), bw=Math.min(f.a,f.b); if(x+bl>areaL){ x=0; y+=rowH; rowH=0; } if(y+bw>areaW){ out.push({x,y:Math.min(y,areaW-bw),w:bl,l:bw,h:f.p.h,p:f.p,over:true}); x+=bl; continue; } out.push({x,y,w:bl,l:bw,h:f.p.h,p:f.p}); x+=bl; rowH=Math.max(rowH,bw); } }
-  if(gap&&!(pocket&&!pockets.length)){ const strips=pocket?pockets.map((pk,i)=>({...pk,strip:true,k:i,label:`gap ${gap.w}"`})):[{...(patStrip||((areaW<PW)?{x:0,y:areaW,w:PL,l:gap.w}:{x:areaL,y:0,w:gap.w,l:PW})),strip:true,k:0,label:`gap ${gap.w}"`}]; strips.forEach(st=>out.push(st)); let k=0; for(const gi of gapItems){ const strip=strips[Math.min(strips.length-1,gi.strip||0)]; const o=gi.ori||gapOrient(gi.p,gap.w)||{across:Math.min(gi.p.l,gi.p.w),along:Math.max(gi.p.l,gi.p.w),h:gi.p.h}; const bw=o.across, bl=o.along; const along=strip.w>strip.l; const nA=Math.max(1,Math.floor((along?strip.w:strip.l)/bl)), nX=o.nAcross||1, n=nA*nX; const slot=gi.pos?gi.pos.i:k%n; const ia=slot%nA, ix=Math.floor(slot/nA)%nX; const off=gi.pos?gi.off:0; const ex=gi.pos?{z0:gi.pos.z,lz:gi.lz}:{}; out.push(along?{x:strip.x+off+ia*bl,y:strip.y+ix*bw,w:bl,l:Math.min(bw,gap.w),h:o.h,p:gi.p,inGap:true,ori:o,stackN:Math.floor(k/n),...ex}:{x:strip.x+ix*bw,y:strip.y+off+ia*bl,w:Math.min(bw,gap.w),l:bl,h:o.h,p:gi.p,inGap:true,ori:o,stackN:Math.floor(k/n),...ex}); k++; } }
+  if(gap&&!pocket&&gridded){ // a plain grid opens its gap strip down the middle (or after row/column # gapat), not along the far edge: the stack stays square on the deck and the fillers are boxed in on both sides
+    const widthCase=areaW<PW; const mains=out.filter(b=>!b.over); const starts=[...new Set(mains.map(b=>+(widthCase?b.y:b.x).toFixed(2)))].sort((a,b)=>a-b);
+    if(starts.length>=2){ const span=widthCase?areaW:areaL; let k=G.gapAt?Math.min(Math.max(1,G.gapAt),starts.length-1):null; if(k==null){ let bd=Infinity; for(let i=1;i<starts.length;i++){ const d=Math.abs(starts[i]-span/2); if(d<bd){ bd=d; k=i; } } }
+      const at=starts[k]; mains.forEach(b=>{ if(widthCase){ if(b.y>=at-0.01) b.y+=gap.w; } else if(b.x>=at-0.01) b.x+=gap.w; }); midStrip=widthCase?{x:0,y:at,w:PL,l:gap.w}:{x:at,y:0,w:gap.w,l:PW}; } }
+  if(gap&&!(pocket&&!pockets.length)){ const strips=pocket?pockets.map((pk,i)=>({...pk,strip:true,k:i,label:`gap ${gap.w}"`})):[{...(patStrip||midStrip||((areaW<PW)?{x:0,y:areaW,w:PL,l:gap.w}:{x:areaL,y:0,w:gap.w,l:PW})),strip:true,k:0,label:`gap ${gap.w}"`}]; strips.forEach(st=>out.push(st)); let k=0; for(const gi of gapItems){ const strip=strips[Math.min(strips.length-1,gi.strip||0)]; const o=gi.ori||gapOrient(gi.p,gap.w)||{across:Math.min(gi.p.l,gi.p.w),along:Math.max(gi.p.l,gi.p.w),h:gi.p.h}; const bw=o.across, bl=o.along; const along=strip.w>strip.l; const nA=Math.max(1,Math.floor((along?strip.w:strip.l)/bl)), nX=o.nAcross||1, n=nA*nX; const slot=gi.pos?gi.pos.i:k%n; const ia=slot%nA, ix=Math.floor(slot/nA)%nX; const off=gi.pos?gi.off:0; const ex=gi.pos?{z0:gi.pos.z,lz:gi.lz}:{}; out.push(along?{x:strip.x+off+ia*bl,y:strip.y+ix*bw,w:bl,l:Math.min(bw,gap.w),h:o.h,p:gi.p,inGap:true,ori:o,stackN:Math.floor(k/n),...ex}:{x:strip.x+ix*bw,y:strip.y+off+ia*bl,w:Math.min(bw,gap.w),l:bl,h:o.h,p:gi.p,inGap:true,ori:o,stackN:Math.floor(k/n),...ex}); k++; } }
   if(flip) out.forEach(b=>{ if(!b.strip) b.x=PL-b.x-b.w; });
   return out; }
 function layerSvg(L,size=170,support=null){ const PL=settings.pl,PW=settings.pw; const sc=size/PL; const boxes=layoutLayer(L,support);
