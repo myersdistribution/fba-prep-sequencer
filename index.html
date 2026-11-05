@@ -633,7 +633,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.41.1-progress';
+const VERSION='2.41.2-progress';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -683,6 +683,10 @@ async function syncPull(){ if(!syncEnabled()) return false; setSyncStatus('synci
 function mergeShipment(mine,theirs,theirsNewer){ if(!mine||!theirs) return theirs||mine; if((mine.shipId||mine.source)!==(theirs.shipId||theirs.source)) return theirsNewer?theirs:mine;
   const base=theirsNewer?{...mine,...theirs}:{...theirs,...mine};
   for(const k of ['actual','picked','prepped','asis','stacked']){ const a=mine[k]||{}, b=theirs[k]||{}; base[k]=theirsNewer?{...a,...b}:{...b,...a}; }
+  { // pallet locks: per pallet, the newer lock wins; an unlock newer than the lock removes it. A device's whole list never replaces another's, so a lock can't vanish in a sync race
+    const un={}; for(const src of [mine.unlocked||{},theirs.unlocked||{}]) for(const n in src) un[n]=Math.max(un[n]||0,src[n]||0);
+    const by=new Map(); for(const x of (mine.locked||[]).concat(theirs.locked||[])){ const e=by.get(x.n); if(!e||(x.ts||0)>(e.ts||0)) by.set(x.n,x); }
+    base.locked=[...by.values()].filter(x=>!(un[x.n]>(x.ts||0))).sort((a,b)=>a.n-b.n); base.unlocked=un; }
   // job clock sessions: union by id; a stop time beats none, otherwise the newer copy's times win
   { const S=new Map(); const put=(x,win)=>{ const e=S.get(x.id); if(!e){ S.set(x.id,{...x}); return; } const m={...(win?e:x),...(win?x:e)}; m.stop=e.stop&&x.stop?(win?x.stop:e.stop):(e.stop||x.stop||null); S.set(x.id,m); };
     ((theirsNewer?mine.sessions:theirs.sessions)||[]).forEach(x=>put(x,false)); ((theirsNewer?theirs.sessions:mine.sessions)||[]).forEach(x=>put(x,true)); if(S.size) base.sessions=[...S.values()]; }
@@ -1514,10 +1518,10 @@ function deserPallet(S){ const byId=new Map(library.map(p=>[p.id,p])); let broke
   if(broken||!layers.length) return null;
   return {layers,h:layers.reduce((s,L)=>s+L.h,0),wt:layers.reduce((s,L)=>s+L.wt,0),fill:(S.fill||[]).map(F=>({...F,comp:dc(F.comp)})),baseQuota:{},locked:true,lockN:S.n,n:S.n}; }
 function lockedSnaps(){ return (shipment&&shipment.locked)||[]; }
-function lockPallet(n){ const plan=buildPlan(); const P=plan&&plan.pallets.find(x=>x.n===n); if(!P) return; shipment.locked=lockedSnaps().filter(x=>x.n!==n).concat([serPallet(P)]); store.set('shipment',shipment); renderAll(); feedback(`Pallet ${n} locked — it stays as planned until you unlock it`,'ok'); }
-function unlockPallet(n){ shipment.locked=lockedSnaps().filter(x=>x.n!==n); store.set('shipment',shipment); renderAll(); feedback(`Pallet ${n} unlocked — it will re-plan with the rest`,'ok'); }
-function lockAll(quiet){ const plan=buildPlan(); if(!plan||!plan.pallets.length) return; shipment.locked=plan.pallets.map(serPallet); store.set('shipment',shipment); if(!quiet){ renderAll(); feedback(`Plan locked — ${plan.pallets.length} pallet${plan.pallets.length>1?'s':''} frozen; quantity or product changes only re-plan unlocked pallets`,'ok'); } }
-async function unlockAll(){ if(!lockedSnaps().length) return; if(!await ask('Unlock every pallet and let the whole plan re-plan? Pallets already built may come out different.',{ok:'Unlock all'})) return; shipment.locked=[]; store.set('shipment',shipment); renderAll(); feedback('Plan unlocked','ok'); }
+function lockPallet(n){ const plan=buildPlan(); const P=plan&&plan.pallets.find(x=>x.n===n); if(!P) return; shipment.locked=lockedSnaps().filter(x=>x.n!==n).concat([serPallet(P)]); if(shipment.unlocked) delete shipment.unlocked[n]; store.set('shipment',shipment); renderAll(); feedback(`Pallet ${n} locked — it stays as planned until you unlock it`,'ok'); }
+async function unlockPallet(n){ if(!await ask(`Unlock pallet ${n}? It re-plans with the rest — if it is already built, leave it locked.`,{ok:'Unlock'})) return; shipment.locked=lockedSnaps().filter(x=>x.n!==n); shipment.unlocked={...(shipment.unlocked||{}),[n]:Date.now()}; store.set('shipment',shipment); renderAll(); feedback(`Pallet ${n} unlocked — it will re-plan with the rest`,'ok'); }
+function lockAll(quiet){ const plan=buildPlan(); if(!plan||!plan.pallets.length) return; shipment.locked=plan.pallets.map(serPallet); shipment.unlocked={}; store.set('shipment',shipment); if(!quiet){ renderAll(); feedback(`Plan locked — ${plan.pallets.length} pallet${plan.pallets.length>1?'s':''} frozen; quantity or product changes only re-plan unlocked pallets`,'ok'); } }
+async function unlockAll(){ if(!lockedSnaps().length) return; if(!await ask('Unlock every pallet and let the whole plan re-plan? Pallets already built may come out different.',{ok:'Unlock all'})) return; { const t=Date.now(); shipment.unlocked={...(shipment.unlocked||{})}; lockedSnaps().forEach(x=>{ shipment.unlocked[x.n]=t; }); } shipment.locked=[]; store.set('shipment',shipment); renderAll(); feedback('Plan unlocked','ok'); }
 function bayTagHtml(p){ const l=(shipment&&shipment.lines||[]).find(x=>x.id===p.id); const loc=l?String(l.loc||'').trim():''; const n=l&&parseInt(l.inb)>0?parseInt(l.inb):0; return loc||n?`<span class="pill" style="background:var(--accent);color:#0f1117;border-color:var(--accent);font-weight:700;font-size:12px;padding:3px 9px;margin-right:6px">${loc?'BAY '+esc(loc):'NO BAY'}${n?' · #'+n:''}</span>`:'<span class="pill" style="color:var(--warn);border-color:var(--warn);margin-right:6px">no bay</span>'; }
 function qtyLineHtml(p,units,wholeUnits){ const per=p.a.perbox===1?1:(p.upc||1); const b=x=>`<b style="color:var(--text)">${x}</b>`; const part=wholeUnits!=null&&wholeUnits!==units;
   if(per===1||p.a.prep==='3in1') return `Number of boxes ${b(units)}${part?` <span style="color:var(--warn)">(${wholeUnits} in the whole run)</span>`:''}`;
