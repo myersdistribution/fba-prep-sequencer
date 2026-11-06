@@ -633,7 +633,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.41.3-progress';
+const VERSION='2.41.4-progress';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1513,7 +1513,7 @@ function grossWt(net){ return (net+(settings.deckWt||0))*(1+(settings.margin||0)
 function serPallet(P){ const sc=cs=>cs.map(c=>({pid:c.p.id,boxes:c.boxes,inGap:!!c.inGap,rowN:c.rowN||null,ori:c.ori||null,wtEach:c.wtEach||null,off:c.off||0,strip:c.strip||0,lz:c.lz||0,pos:c.pos||null}));
   const ser=L=>({kind:L.kind,group:L.group,h:L.h,wt:L.wt,boxes:L.boxes,fill:L.fill??null,base:!!L.base,fragile:!!L.fragile,top:!!L.top,weak:!!L.weak,stack:L.stack||null,hi:L.hi||null,cap:isFinite(L.cap)?L.cap:null,par:L.par??null,uneven:!!L.uneven,topoff:!!L.topoff,mixedFlavors:!!L.mixedFlavors,stage:!!L.stage,notes:(L.notes||[]).slice(),comp:sc(L.comp),gap:L.gap?{boxes:L.gap.boxes,wt:L.gap.wt,comp:sc(L.gap.comp)}:null});
   return {n:P.n,ts:Date.now(),layers:P.layers.map(ser),fill:(P.fill||[]).map(F=>({group:F.group,boxes:F.boxes,vol:F.vol,wt:F.wt,comp:F.comp.map(c=>({pid:c.p.id,boxes:c.boxes}))}))}; }
-function deserPallet(S){ const byId=new Map(library.map(p=>[p.id,p])); let broken=false; if(S.fill&&S.fill.length&&S.layers&&S.layers.length&&S.layers[S.layers.length-1].top) S={...S,fill:[]}; // a lock can't keep hand-fit boxes on a nothing-on-top layer: those boxes go back to the plan as real layers const dc=cs=>(cs||[]).map(c=>{ const p=byId.get(c.pid); if(!p) broken=true; return {...c,p}; }).filter(c=>c.p);
+function deserPallet(S){ const byId=new Map(library.map(p=>[p.id,p])); let broken=false; if(S.fill&&S.fill.length&&S.layers&&S.layers.length&&S.layers[S.layers.length-1].top) S={...S,fill:[]}; /* a lock can't keep hand-fit boxes on a nothing-on-top layer: those boxes go back to the plan as real layers */ const dc=cs=>(cs||[]).map(c=>{ const p=byId.get(c.pid); if(!p) broken=true; return {...c,p}; }).filter(c=>c.p);
   const layers=(S.layers||[]).map(L=>{ const o={...L,comp:dc(L.comp),cap:L.cap==null?Infinity:L.cap,notes:(L.notes||[]).slice()}; o.gap=L.gap?{boxes:L.gap.boxes,wt:L.gap.wt,comp:dc(L.gap.comp)}:null; return o; });
   if(broken||!layers.length) return null;
   return {layers,h:layers.reduce((s,L)=>s+L.h,0),wt:layers.reduce((s,L)=>s+L.wt,0),fill:(S.fill||[]).map(F=>({...F,comp:dc(F.comp)})),baseQuota:{},locked:true,lockN:S.n,n:S.n}; }
