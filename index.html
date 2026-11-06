@@ -633,7 +633,7 @@ body.touch .dest{font-size:13px}
 // ═══════════════════════════════════════════════════════════════
 // FBA Prep Sequencer v2 — foundation
 // ═══════════════════════════════════════════════════════════════
-const VERSION='2.41.2-progress';
+const VERSION='2.41.3-progress';
 const BUILD='2026-10-22';
 const DEFAULT_URL='https://script.google.com/macros/s/AKfycbxQxqD9kguLN05AtOEmIDob9uBaEbh5RrDKXvil3948NCWQJqdKB7QUrmK3YVwhOh8_dQ/exec';
 const OLD_URLS=['https://script.google.com/macros/s/AKfycbwvxS1J_vADMHfJb44006hIZl4NcVoznk279QPfJgT1_6h3868z0L6V0YUGW7I2nMfdlg/exec']; // earlier deployments: devices still pointing at one of these are moved to DEFAULT_URL on load
@@ -1513,7 +1513,7 @@ function grossWt(net){ return (net+(settings.deckWt||0))*(1+(settings.margin||0)
 function serPallet(P){ const sc=cs=>cs.map(c=>({pid:c.p.id,boxes:c.boxes,inGap:!!c.inGap,rowN:c.rowN||null,ori:c.ori||null,wtEach:c.wtEach||null,off:c.off||0,strip:c.strip||0,lz:c.lz||0,pos:c.pos||null}));
   const ser=L=>({kind:L.kind,group:L.group,h:L.h,wt:L.wt,boxes:L.boxes,fill:L.fill??null,base:!!L.base,fragile:!!L.fragile,top:!!L.top,weak:!!L.weak,stack:L.stack||null,hi:L.hi||null,cap:isFinite(L.cap)?L.cap:null,par:L.par??null,uneven:!!L.uneven,topoff:!!L.topoff,mixedFlavors:!!L.mixedFlavors,stage:!!L.stage,notes:(L.notes||[]).slice(),comp:sc(L.comp),gap:L.gap?{boxes:L.gap.boxes,wt:L.gap.wt,comp:sc(L.gap.comp)}:null});
   return {n:P.n,ts:Date.now(),layers:P.layers.map(ser),fill:(P.fill||[]).map(F=>({group:F.group,boxes:F.boxes,vol:F.vol,wt:F.wt,comp:F.comp.map(c=>({pid:c.p.id,boxes:c.boxes}))}))}; }
-function deserPallet(S){ const byId=new Map(library.map(p=>[p.id,p])); let broken=false; const dc=cs=>(cs||[]).map(c=>{ const p=byId.get(c.pid); if(!p) broken=true; return {...c,p}; }).filter(c=>c.p);
+function deserPallet(S){ const byId=new Map(library.map(p=>[p.id,p])); let broken=false; if(S.fill&&S.fill.length&&S.layers&&S.layers.length&&S.layers[S.layers.length-1].top) S={...S,fill:[]}; // a lock can't keep hand-fit boxes on a nothing-on-top layer: those boxes go back to the plan as real layers const dc=cs=>(cs||[]).map(c=>{ const p=byId.get(c.pid); if(!p) broken=true; return {...c,p}; }).filter(c=>c.p);
   const layers=(S.layers||[]).map(L=>{ const o={...L,comp:dc(L.comp),cap:L.cap==null?Infinity:L.cap,notes:(L.notes||[]).slice()}; o.gap=L.gap?{boxes:L.gap.boxes,wt:L.gap.wt,comp:dc(L.gap.comp)}:null; return o; });
   if(broken||!layers.length) return null;
   return {layers,h:layers.reduce((s,L)=>s+L.h,0),wt:layers.reduce((s,L)=>s+L.wt,0),fill:(S.fill||[]).map(F=>({...F,comp:dc(F.comp)})),baseQuota:{},locked:true,lockN:S.n,n:S.n}; }
@@ -1751,15 +1751,15 @@ function buildPlan(){ plan_endFilm=null;
         // fillers the real columns couldn't take: a small part layer of their own, placed like any leftover (open part layer first); last resort hand-fit
         for(const x of items){ if(x.it.boxes<=0) continue; const p=x.it.p; const fp=(p.l||1)*(p.w||1); const Lx={seq:1e6,kind:'partial',group:p.a.box||p.name,h:p.h||1,wt:x.it.boxes*x.it.wtEach,boxes:x.it.boxes,comp:[{p,boxes:x.it.boxes}],fragile:!!p.a.fragile,top:!!p.a.top,weak:false,base:false,fill:x.it.boxes*fp/area,cap:Infinity,notes:['moved out of a full gap column']};
           let best=null,bs=-Infinity,bi=-1; for(const P of ps){ const f=fitsOn(P,Lx); if(!f) continue; const sc=scoreOf(P,Lx,f); if(sc>bs){bs=sc;best=P;bi=f.idx;} }
-          if(best){ putOn(best,Lx,bi); } else { const P=ps.slice().sort((a,b)=>(pwtNet-b.wt)-(pwtNet-a.wt))[0]; P.fill.push({group:Lx.group,boxes:Lx.boxes,vol:Lx.h*fp*Lx.boxes,wt:Lx.wt,comp:Lx.comp}); } }
+          if(best){ putOn(best,Lx,bi); } else { const okP=ps.filter(P=>!(P.layers.length&&P.layers[P.layers.length-1].top)); const P=(okP.length?okP:ps).slice().sort((a,b)=>(pwtNet-b.wt)-(pwtNet-a.wt))[0]; P.fill.push({group:Lx.group,boxes:Lx.boxes,vol:Lx.h*fp*Lx.boxes,wt:Lx.wt,comp:Lx.comp}); } }
       } }
-    // hand-fit filler by remaining volume & weight
-    let fok=true;
-    for(const F of fl){ let vRem=vol(F), wRem=F.wt; const boxesTotal=F.boxes;
-      for(const P of ps){ if(vRem<=0) break; const free=(usable*area*0.92)-P.layers.reduce((s,L)=>s+vol(L),0)-P.fill.reduce((s,f)=>s+f.vol,0); const wfree=pwtNet-P.wt-P.fill.reduce((s,f)=>s+f.wt,0);
-        if(free<=0||wfree<=0) continue; const frac=Math.min(1,free/vRem,wfree/wRem); const bx=Math.max(1,Math.round(boxesTotal*frac*(vRem/vol(F))));
-        P.fill.push({group:F.group,boxes:Math.min(bx,boxesTotal),vol:vRem*frac,wt:wRem*frac,comp:F.comp}); vRem-=vRem*frac; wRem-=wRem*frac; if(frac>=1) break; }
-      if(vRem>1e-6){ if(ps.length<target){ ps.push({layers:[],h:0,wt:0,fill:[{group:F.group,boxes:boxesTotal,vol:vRem,wt:wRem,comp:F.comp}]}); } else { fok=false; break; } }
+    // hand-fit filler by remaining volume & weight — light leftovers only: at most FILL_MAX boxes a pallet, never on a pallet whose top layer takes nothing on top. Anything bigger has to be a real layer, even if that means another pallet
+    let fok=true; const FILL_MAX=8; const fillBoxes=P=>P.fill.reduce((s,f)=>s+f.boxes,0);
+    for(const F of fl){ let vRem=vol(F), wRem=F.wt; const boxesTotal=F.boxes; let bxRem=boxesTotal;
+      for(const P of ps){ if(vRem<=0||bxRem<=0) break; const topL=P.layers[P.layers.length-1]; if(topL&&topL.top) continue; const room=FILL_MAX-fillBoxes(P); if(room<=0) continue; const free=(usable*area*0.92)-P.layers.reduce((s,L)=>s+vol(L),0)-P.fill.reduce((s,f)=>s+f.vol,0); const wfree=pwtNet-P.wt-P.fill.reduce((s,f)=>s+f.wt,0);
+        if(free<=0||wfree<=0) continue; let frac=Math.min(1,free/vRem,wfree/wRem); let bx=Math.max(1,Math.min(bxRem,Math.round(boxesTotal*frac*(vRem/vol(F))))); if(bx>room){ frac=frac*room/bx; bx=room; }
+        P.fill.push({group:F.group,boxes:bx,vol:vRem*frac,wt:wRem*frac,comp:F.comp}); vRem-=vRem*frac; wRem-=wRem*frac; bxRem-=bx; if(frac>=1) break; }
+      if(vRem>1e-6&&bxRem>0){ if(ps.length<target&&bxRem<=FILL_MAX){ ps.push({layers:[],h:0,wt:0,fill:[{group:F.group,boxes:bxRem,vol:vRem,wt:wRem,comp:F.comp}]}); } else { fok=false; break; } }
     }
     if(!fok) return null;
     return {ps:ps.filter(P=>P.layers.length||P.fill.length),fl};
